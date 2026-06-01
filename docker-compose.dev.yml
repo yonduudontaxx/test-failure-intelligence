@@ -20,8 +20,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: ../docker/backend.Dockerfile
-      target: development
+      dockerfile: ../docker/backend.Dockerfile.dev
     container_name: tfi-backend-dev
     restart: unless-stopped
     environment:
@@ -40,8 +39,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: ../docker/frontend.Dockerfile
-      target: development
+      dockerfile: ../docker/frontend.Dockerfile.dev
     container_name: tfi-frontend-dev
     restart: unless-stopped
     environment:
