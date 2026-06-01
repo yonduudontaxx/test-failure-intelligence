@@ -55,7 +55,6 @@ frontend/next.config.ts
 frontend/eslint.config.js
 frontend/.prettierrc
 frontend/.prettierignore
-frontend/.env.example
 frontend/src/app/layout.tsx
 frontend/src/app/page.tsx
 frontend/src/lib/api-client.ts
@@ -1033,42 +1032,17 @@ chore(backend): add environment variable configuration
 
 ---
 
-#### Task 10: Frontend environment variables
+~~#### Task 10: Frontend environment variables~~ — **Removed**
 
-**Objective:**
-Create `frontend/.env.example` documenting the frontend environment variables. Create a local `frontend/.env.local` for development. The `api-client.ts` created in Task 5 already reads `NEXT_PUBLIC_API_URL` — this task ensures the variable is documented and the local development value is configured.
-
-**Dependencies Added:**
-None.
-
-**Files Created:**
-- `frontend/.env.example`
-
-**Files Modified:**
-None (the local `frontend/.env.local` is created but not committed — it is in `.gitignore`).
-
-**`frontend/.env.example`:**
-```bash
-# Backend API URL (must be accessible from the browser)
-# In development, the backend runs on localhost:3001
-NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1
-```
-
-**Steps:**
-- [ ] Create `frontend/.env.example` with the contents above
-- [ ] Create `frontend/.env.local` by copying `.env.example`: `cp frontend/.env.example frontend/.env.local`
-- [ ] Verify `frontend/.env.local` is in `.gitignore` and does not appear in `git status`
-- [ ] Run `cd frontend && npm run build` — verify it still exits 0
-
-**Acceptance Criteria:**
-- [ ] `frontend/.env.example` documents `NEXT_PUBLIC_API_URL` with a description and default value
-- [ ] `frontend/.env.local` exists locally but is excluded from git
-- [ ] `cd frontend && npm run build` exits 0
-
-**Commit Message:**
-```
-chore(frontend): add environment variable configuration
-```
+> **Decision (2026-06-01):** Task 10 was removed from Epic 1 before implementation.
+>
+> **Rationale:**
+> - The frontend already works with zero configuration. `api-client.ts` contains `process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'` — a new developer who clones the repo and never creates `.env.local` gets a fully working local setup.
+> - No required frontend environment variables exist. No secrets exist. No runtime validation is possible or needed (Next.js `NEXT_PUBLIC_*` variables are baked in at build time, not read at runtime).
+> - The proposed `frontend/.env.example` would have documented `http://localhost:3001/api/v1` — the exact value already visible as the fallback in `api-client.ts`. It adds a layer of indirection that points back to information already present in code.
+> - `NEXT_PUBLIC_API_URL` is documented in the README environment variables table (Task 16), which is the place developers look first and where the production requirement is clearly communicated.
+>
+> **Contrast with Task 9:** The backend warranted a dedicated configuration task because `DATABASE_URL` is required and throws on startup if absent. The frontend has no equivalent. Applying the same pattern to both was false symmetry, not good design.
 
 ---
 
@@ -1076,10 +1050,10 @@ chore(frontend): add environment variable configuration
 
 ---
 
-#### Task 11: App factory, entry point, and health check route
+#### Task 10: App factory, entry point, and health check route
 
 **Objective:**
-Implement the Fastify application factory in `backend/src/app.ts` and the server entry point in `backend/src/index.ts`. Implement the `GET /health` route in `backend/src/http/routes/health.ts`. The health check route is the only route implemented in Epic 1. It must return a structured response and integrate with the database connection created in Task 13.
+Implement the Fastify application factory in `backend/src/app.ts` and the server entry point in `backend/src/index.ts`. Implement the `GET /health` route in `backend/src/http/routes/health.ts`. The health check route is the only route implemented in Epic 1. It must return a structured response and integrate with the database connection created in Task 12.
 
 The app factory and entry point are separated so that tests can build the app without starting the HTTP server.
 
@@ -1108,7 +1082,7 @@ export async function buildApp(
 - Registers `@fastify/sensible` plugin (provides `fastify.httpErrors`, consistent error handling)
 - Registers `@fastify/cors` plugin (accept all origins in development; tighten in production)
 - Registers the health route plugin from `./http/routes/health.ts` with prefix `/`
-- Registers the Swagger plugin from `./http/plugins/swagger.ts` (implemented in Task 12)
+- Registers the Swagger plugin from `./http/plugins/swagger.ts` (implemented in Task 11)
 - Returns the Fastify instance **without calling `app.listen()`** — listening is the responsibility of `index.ts`
 
 **`backend/src/index.ts`** must implement:
@@ -1141,13 +1115,13 @@ export default async function healthRoutes(fastify: FastifyInstance): Promise<vo
     "required": ["status", "database", "timestamp"]
   }
   ```
-- At this stage in Epic 1, before the database pool is created (Task 13), `database` should return `"disconnected"` — the field exists in the schema so that Task 14 can update its value without changing the schema
+- At this stage in Epic 1, before the database pool is created (Task 12), `database` should return `"disconnected"` — the field exists in the schema so that Task 13 can update its value without changing the schema
 - Returns HTTP 200 regardless of database state (health check degraded, not failed, is appropriate for infrastructure monitoring)
 - Returns `{ status: 'ok', database: 'disconnected', timestamp: new Date().toISOString() }`
 
 **Steps:**
 - [ ] Implement `backend/src/http/routes/health.ts` per the contract above (returns `database: 'disconnected'` for now)
-- [ ] Implement `backend/src/app.ts` per the contract above — leave the Swagger plugin registration as a no-op comment for now (Task 12 adds it)
+- [ ] Implement `backend/src/app.ts` per the contract above — leave the Swagger plugin registration as a no-op comment for now (Task 11 adds it)
 - [ ] Implement `backend/src/index.ts` per the contract above
 - [ ] Run `cd backend && npm run typecheck` — verify exits 0
 - [ ] Run `cd backend && npm run dev` — verify the server starts on port 3001
@@ -1159,7 +1133,7 @@ export default async function healthRoutes(fastify: FastifyInstance): Promise<vo
 - [ ] `cd backend && npm run dev` starts the server and logs the port
 - [ ] `curl http://localhost:3001/health` returns HTTP 200 with `{"status":"ok","database":"disconnected","timestamp":"..."}`
 - [ ] Stopping the process with `Ctrl+C` logs a graceful shutdown message (no unhandled rejection)
-- [ ] `buildApp()` accepts an optional `FastifyServerOptions` parameter — test code in Task 15 will use `{ logger: false }` to suppress logs during tests
+- [ ] `buildApp()` accepts an optional `FastifyServerOptions` parameter — test code in Task 14 will use `{ logger: false }` to suppress logs during tests
 
 **Commit Message:**
 ```
@@ -1168,7 +1142,7 @@ feat(backend): add Fastify app factory and health check route
 
 ---
 
-#### Task 12: Register OpenAPI plugin
+#### Task 11: Register OpenAPI plugin
 
 **Objective:**
 Create `backend/src/http/plugins/swagger.ts` to register `@fastify/swagger` and `@fastify/swagger-ui` with the Fastify instance. The OpenAPI spec is generated automatically from the JSON Schema definitions attached to each route (starting with the health route). The Swagger UI is served at `/documentation`.
@@ -1237,7 +1211,7 @@ feat(backend): add OpenAPI documentation with Swagger UI
 
 ---
 
-#### Task 13: PostgreSQL connection pool
+#### Task 12: PostgreSQL connection pool
 
 **Objective:**
 Create `backend/src/database/client.ts` — a module that exports a `pg.Pool` singleton and a `testConnection()` utility function. This module is the single source of truth for database connectivity in the backend. All repositories (added in Epic 2) import the pool from this module.
@@ -1277,7 +1251,7 @@ export async function testConnection(): Promise<boolean>
 - [ ] Ensure Docker Compose dev PostgreSQL is running: `docker compose -f docker-compose.dev.yml up postgres -d`
 - [ ] Run `cd backend && npm run typecheck` — verify exits 0
 - [ ] Run `cd backend && npm run dev` — verify the server starts without database connection errors
-- [ ] In a second terminal: `curl http://localhost:3001/health` — the response should still show `database: 'disconnected'` (Task 14 wires this in)
+- [ ] In a second terminal: `curl http://localhost:3001/health` — the response should still show `database: 'disconnected'` (Task 13 wires this in)
 
 **Acceptance Criteria:**
 - [ ] `cd backend && npm run typecheck` exits 0
@@ -1292,7 +1266,7 @@ feat(backend): add PostgreSQL connection pool
 
 ---
 
-#### Task 14: Integrate database health check into health route
+#### Task 13: Integrate database health check into health route
 
 **Objective:**
 Update `backend/src/http/routes/health.ts` to call `testConnection()` from the database client and return the actual database connectivity status in the health response. This is the wire-up that connects the health route to the database pool.
@@ -1311,7 +1285,7 @@ None.
 - Sets `database: 'connected'` if `testConnection()` returns `true`
 - Sets `database: 'disconnected'` if `testConnection()` returns `false`
 - Returns HTTP 200 in both cases (degraded state, not failure)
-- The response schema and shape are unchanged from Task 11
+- The response schema and shape are unchanged from Task 10
 
 **Steps:**
 - [ ] Update `backend/src/http/routes/health.ts` to import and call `testConnection()`
@@ -1337,7 +1311,7 @@ feat(backend): integrate database connectivity into health check
 
 ---
 
-#### Task 15: Health check integration test
+#### Task 14: Health check integration test
 
 **Objective:**
 Write the first integration test that builds the Fastify app using `buildApp()` and sends real HTTP requests against it using Fastify's `.inject()` method. The test covers the `GET /health` endpoint for both the healthy and disconnected states.
@@ -1374,7 +1348,7 @@ None.
 - Use `app.inject({ method: 'GET', url: '/health' })` — this sends HTTP requests without opening a real socket, making tests fast and hermetic
 
 *Environment requirement for the database-connected test:*
-- Requires `DATABASE_URL` to be set. In CI (Task 16), a PostgreSQL service container provides the database. Locally, developers run PostgreSQL via Docker Compose before running integration tests.
+- Requires `DATABASE_URL` to be set. In CI (Task 15), a PostgreSQL service container provides the database. Locally, developers run PostgreSQL via Docker Compose before running integration tests.
 - If `DATABASE_URL` is not set, `buildApp()` will throw because `config.ts` validates it. The test file must be run with a valid `DATABASE_URL` in the environment.
 
 **Steps:**
@@ -1402,7 +1376,7 @@ test(backend): add health check integration test
 
 ---
 
-#### Task 16: GitHub Actions CI workflow
+#### Task 15: GitHub Actions CI workflow
 
 **Objective:**
 Create a CI pipeline that runs on every push to any branch and on every pull request targeting `main` or `develop`. The pipeline runs four jobs: `lint`, `typecheck`, `test`, and `build`. The `test` job uses a PostgreSQL service container so integration tests can connect to a real database without Docker Compose.
@@ -1586,7 +1560,7 @@ ci: add GitHub Actions workflow for lint, typecheck, test, and build
 
 ---
 
-#### Task 17: README local development guide
+#### Task 16: README local development guide
 
 **Objective:**
 Rewrite `README.md` with a developer-focused guide covering prerequisites, local setup, how to run all services, how to run tests, available npm scripts, environment variable reference, and the project structure. The README must be accurate for the state of the codebase at the end of Epic 1.
@@ -1611,7 +1585,7 @@ None.
 
 3. **Local Setup** — step-by-step:
    - Clone the repo
-   - Copy env files: `cp backend/.env.example backend/.env` and `cp frontend/.env.example frontend/.env.local`
+   - Copy backend env file: `cp backend/.env.example backend/.env`
    - Install backend deps: `cd backend && npm install`
    - Install frontend deps: `cd frontend && npm install`
    - Start PostgreSQL: `docker compose -f docker-compose.dev.yml up postgres -d`
@@ -1646,7 +1620,7 @@ None.
 **Acceptance Criteria:**
 - [ ] README covers all nine sections listed above
 - [ ] Every shell command in the README is correct and executable
-- [ ] Environment variable table matches `backend/.env.example` and `frontend/.env.example` exactly
+- [ ] Environment variable table matches `backend/.env.example`; `NEXT_PUBLIC_API_URL` is documented in the frontend section with its default and production requirement
 - [ ] The Swagger UI URL is documented correctly
 - [ ] The project structure section matches the spec
 
@@ -1659,7 +1633,7 @@ docs: add local development guide to README
 
 ## Commit Sequence Summary
 
-Seventeen commits, each representing one complete, self-contained unit of work:
+Sixteen commits, each representing one complete, self-contained unit of work:
 
 | # | Commit Message | Story | Task |
 |---|---|---|---|
@@ -1672,14 +1646,13 @@ Seventeen commits, each representing one complete, self-contained unit of work:
 | 7 | `chore: add Docker Compose development configuration` | 1.4 | Task 7 |
 | 8 | `chore: add production Dockerfiles and Docker Compose configuration` | 1.4 | Task 8 |
 | 9 | `chore(backend): add environment variable configuration` | 1.5 | Task 9 |
-| 10 | `chore(frontend): add environment variable configuration` | 1.5 | Task 10 |
-| 11 | `feat(backend): add Fastify app factory and health check route` | 1.6 | Task 11 |
-| 12 | `feat(backend): add OpenAPI documentation with Swagger UI` | 1.6 | Task 12 |
-| 13 | `feat(backend): add PostgreSQL connection pool` | 1.7 | Task 13 |
-| 14 | `feat(backend): integrate database connectivity into health check` | 1.7 | Task 14 |
-| 15 | `test(backend): add health check integration test` | 1.7 | Task 15 |
-| 16 | `ci: add GitHub Actions workflow for lint, typecheck, test, and build` | 1.8 | Task 16 |
-| 17 | `docs: add local development guide to README` | 1.9 | Task 17 |
+| 10 | `feat(backend): add Fastify app factory and health check route` | 1.6 | Task 10 |
+| 11 | `feat(backend): add OpenAPI documentation with Swagger UI` | 1.6 | Task 11 |
+| 12 | `feat(backend): add PostgreSQL connection pool` | 1.7 | Task 12 |
+| 13 | `feat(backend): integrate database connectivity into health check` | 1.7 | Task 13 |
+| 14 | `test(backend): add health check integration test` | 1.7 | Task 14 |
+| 15 | `ci: add GitHub Actions workflow for lint, typecheck, test, and build` | 1.8 | Task 15 |
+| 16 | `docs: add local development guide to README` | 1.9 | Task 16 |
 
 ---
 
@@ -1693,13 +1666,13 @@ Every requirement from the design spec's Epic 1 section is covered:
 | Configure Next.js + TypeScript (frontend) | Task 5 |
 | ESLint + Prettier (frontend) | Task 6 |
 | Docker Compose dev and prod configs | Tasks 7, 8 |
-| GitHub Actions CI pipeline (lint, typecheck, test, build) | Task 16 |
-| PostgreSQL connection pool | Task 13 |
-| Fastify app scaffold | Tasks 11, 12 |
-| OpenAPI/Swagger | Task 12 |
-| Environment variable configuration | Tasks 9, 10 |
+| GitHub Actions CI pipeline (lint, typecheck, test, build) | Task 15 |
+| PostgreSQL connection pool | Task 12 |
+| Fastify app scaffold | Tasks 10, 11 |
+| OpenAPI/Swagger | Task 11 |
+| Environment variable configuration | Task 9 (backend); Task 16 (README documents frontend) |
 | Directory structure matching approved spec | Task 1 |
-| README with setup guide | Task 17 |
+| README with setup guide | Task 16 |
 
 **Not in Epic 1 (by design):**
 - Database migrations — Epic 1 Story 2 (next implementation plan)
