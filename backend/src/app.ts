@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
 import { config } from './config.js';
+import swaggerPlugin from './http/plugins/swagger.js';
 import healthRoutes from './http/routes/health.js';
 
 export async function buildApp(opts?: FastifyServerOptions): Promise<FastifyInstance> {
@@ -12,6 +13,7 @@ export async function buildApp(opts?: FastifyServerOptions): Promise<FastifyInst
 
   app.register(sensible);
   app.register(cors);
+  app.register(swaggerPlugin);
   app.register(healthRoutes);
 
   await app.ready();
