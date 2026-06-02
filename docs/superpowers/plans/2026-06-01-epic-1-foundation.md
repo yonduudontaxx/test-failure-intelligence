@@ -1053,7 +1053,7 @@ chore(backend): add environment variable configuration
 #### Task 10: App factory, entry point, and health check route
 
 **Objective:**
-Implement the Fastify application factory in `backend/src/app.ts` and the server entry point in `backend/src/index.ts`. Implement the `GET /health` route in `backend/src/http/routes/health.ts`. The health check route is the only route implemented in Epic 1. It must return a structured response and integrate with the database connection created in Task 12.
+Implement the Fastify application factory in `backend/src/app.ts` and the server entry point in `backend/src/index.ts`. Implement the `GET /health` route in `backend/src/http/routes/health.ts`. The health check route is the only route implemented in Epic 1. It returns only what the server knows at this stage: `status` and `timestamp`. The `database` field is added in Task 13 when a real connection check exists.
 
 The app factory and entry point are separated so that tests can build the app without starting the HTTP server.
 
@@ -1082,7 +1082,6 @@ export async function buildApp(
 - Registers `@fastify/sensible` plugin (provides `fastify.httpErrors`, consistent error handling)
 - Registers `@fastify/cors` plugin (accept all origins in development; tighten in production)
 - Registers the health route plugin from `./http/routes/health.ts` with prefix `/`
-- Registers the Swagger plugin from `./http/plugins/swagger.ts` (implemented in Task 11)
 - Returns the Fastify instance **without calling `app.listen()`** — listening is the responsibility of `index.ts`
 
 **`backend/src/index.ts`** must implement:
@@ -1109,29 +1108,27 @@ export default async function healthRoutes(fastify: FastifyInstance): Promise<vo
     "type": "object",
     "properties": {
       "status":    { "type": "string", "enum": ["ok"] },
-      "database":  { "type": "string", "enum": ["connected", "disconnected"] },
       "timestamp": { "type": "string", "format": "date-time" }
     },
-    "required": ["status", "database", "timestamp"]
+    "required": ["status", "timestamp"]
   }
   ```
-- At this stage in Epic 1, before the database pool is created (Task 12), `database` should return `"disconnected"` — the field exists in the schema so that Task 13 can update its value without changing the schema
-- Returns HTTP 200 regardless of database state (health check degraded, not failed, is appropriate for infrastructure monitoring)
-- Returns `{ status: 'ok', database: 'disconnected', timestamp: new Date().toISOString() }`
+- Returns HTTP 200
+- Returns `{ status: 'ok', timestamp: new Date().toISOString() }`
 
 **Steps:**
-- [ ] Implement `backend/src/http/routes/health.ts` per the contract above (returns `database: 'disconnected'` for now)
-- [ ] Implement `backend/src/app.ts` per the contract above — leave the Swagger plugin registration as a no-op comment for now (Task 11 adds it)
+- [ ] Implement `backend/src/http/routes/health.ts` per the contract above
+- [ ] Implement `backend/src/app.ts` per the contract above
 - [ ] Implement `backend/src/index.ts` per the contract above
 - [ ] Run `cd backend && npm run typecheck` — verify exits 0
 - [ ] Run `cd backend && npm run dev` — verify the server starts on port 3001
-- [ ] In a second terminal: `curl http://localhost:3001/health` — verify response is `{"status":"ok","database":"disconnected","timestamp":"..."}`
+- [ ] In a second terminal: `curl http://localhost:3001/health` — verify response is `{"status":"ok","timestamp":"..."}`
 - [ ] Stop the dev server
 
 **Acceptance Criteria:**
 - [ ] `cd backend && npm run typecheck` exits 0
 - [ ] `cd backend && npm run dev` starts the server and logs the port
-- [ ] `curl http://localhost:3001/health` returns HTTP 200 with `{"status":"ok","database":"disconnected","timestamp":"..."}`
+- [ ] `curl http://localhost:3001/health` returns HTTP 200 with `{"status":"ok","timestamp":"..."}`
 - [ ] Stopping the process with `Ctrl+C` logs a graceful shutdown message (no unhandled rejection)
 - [ ] `buildApp()` accepts an optional `FastifyServerOptions` parameter — test code in Task 14 will use `{ logger: false }` to suppress logs during tests
 
@@ -1251,7 +1248,7 @@ export async function testConnection(): Promise<boolean>
 - [ ] Ensure Docker Compose dev PostgreSQL is running: `docker compose -f docker-compose.dev.yml up postgres -d`
 - [ ] Run `cd backend && npm run typecheck` — verify exits 0
 - [ ] Run `cd backend && npm run dev` — verify the server starts without database connection errors
-- [ ] In a second terminal: `curl http://localhost:3001/health` — the response should still show `database: 'disconnected'` (Task 13 wires this in)
+- [ ] In a second terminal: `curl http://localhost:3001/health` — the response should still be `{"status":"ok","timestamp":"..."}` (Task 13 adds the `database` field)
 
 **Acceptance Criteria:**
 - [ ] `cd backend && npm run typecheck` exits 0
@@ -1269,7 +1266,7 @@ feat(backend): add PostgreSQL connection pool
 #### Task 13: Integrate database health check into health route
 
 **Objective:**
-Update `backend/src/http/routes/health.ts` to call `testConnection()` from the database client and return the actual database connectivity status in the health response. This is the wire-up that connects the health route to the database pool.
+Update `backend/src/http/routes/health.ts` to add the `database` field to the response schema and call `testConnection()` from the database client to populate it with real connectivity state. This is the task that introduces `database` — not before, because it has no real value until the pool exists.
 
 **Dependencies Added:**
 None.
@@ -1281,11 +1278,22 @@ None.
 - `backend/src/http/routes/health.ts`
 
 **Updated behavior of `GET /health`:**
+- Extends the response schema to add the `database` field:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "status":    { "type": "string", "enum": ["ok"] },
+      "database":  { "type": "string", "enum": ["connected", "disconnected"] },
+      "timestamp": { "type": "string", "format": "date-time" }
+    },
+    "required": ["status", "database", "timestamp"]
+  }
+  ```
 - Calls `testConnection()` from `../../database/client.js`
 - Sets `database: 'connected'` if `testConnection()` returns `true`
 - Sets `database: 'disconnected'` if `testConnection()` returns `false`
 - Returns HTTP 200 in both cases (degraded state, not failure)
-- The response schema and shape are unchanged from Task 10
 
 **Steps:**
 - [ ] Update `backend/src/http/routes/health.ts` to import and call `testConnection()`
