@@ -129,12 +129,20 @@ Each port is a TypeScript interface in `backend/src/domain/ports/`. Methods are 
 
 Method signatures are deliberately minimal — only what current and immediately-next epics consume. Additional methods will be added as Epic 4/5 needs them, with the corresponding tests.
 
+### Naming conventions across layers
+
+- **Database columns** (migrations, SQL): `snake_case` — Postgres convention, preserves fidelity with spec §4 schema tables
+- **Domain entity fields** (`backend/src/domain/entities/*`): `camelCase` — idiomatic TypeScript, persistence-layer naming does not leak into the domain
+- **API JSON** (HTTP request/response bodies): `camelCase` — matches spec §7 wire format
+
+The translation between snake_case columns and camelCase entity fields lives in the repository `mapRow` helpers (below). The HTTP layer can serialize domain entities directly without further case-mapping.
+
 ### Postgres implementations (infrastructure layer)
 
 Each implementation lives in `backend/src/infrastructure/repositories/pg-*.repository.ts` and:
 
 - Takes a `pg.Pool` in its constructor and stores it as a private readonly field
-- Defines a private `mapRow(row): Entity` helper (DRY) that handles `null`-to-`undefined` and `null`-JSONB normalization
+- Defines a private `mapRow(row): Entity` helper (DRY) that translates `snake_case` database columns to `camelCase` domain entity fields, normalizes `null` to `undefined` for optional fields, and normalizes `null` JSONB columns to `{}`
 - Uses parameterized queries exclusively (`$1`, `$2`, …) — never string concatenation
 - Accepts an optional `PoolClient` on write methods, allowing Epic 4 to pass a client that's already in a transaction
 - Maps Postgres-specific error codes (unique violation `23505`, foreign key violation `23503`) to domain-meaningful errors via a small `pgErrors.ts` helper (single place — DRY)
