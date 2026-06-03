@@ -14,7 +14,7 @@
     "format:check": "prettier --check src tests",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/unit",
-    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --passWithNoTests --forceExit",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --passWithNoTests",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down 1"

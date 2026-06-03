@@ -15,6 +15,8 @@ Each item is logged with:
 
 ## TD-001 — Refactor PostgreSQL pool lifecycle management
 
+**Status:** Closed (2026-06-03) — see Resolution below.
+
 ### Current state
 
 - `backend/src/database/client.ts` creates a module-level `pg.Pool` at import
@@ -65,3 +67,26 @@ Promote this item to active work when **any** of the following occurs:
 work. It is not architecturally correct, but the refactor scope (touching
 `buildApp`, `index.ts`, route plugins, and test fixtures) is larger than the
 current symptom warrants. Logged here so it is not forgotten.
+
+### Resolution (2026-06-03)
+
+Closed by Task 5 of
+`docs/superpowers/plans/2026-06-03-epic-2-data-layer.md`. Changes:
+
+- `pg.Pool` is constructed in `backend/src/index.ts` via the
+  `backend/src/database/create-pool.ts` factory — no module-level
+  construction anywhere in `backend/src/`
+- The pool is exposed to route handlers as `fastify.pool` by a new
+  `backend/src/http/plugins/repositories.ts` plugin, which also registers
+  the pool's error listener through Fastify's logger and tears the pool
+  down in the app's `onClose` hook
+- `SIGTERM` / `SIGINT` handlers in `index.ts` call `app.close()`, which
+  drains the pool via the `onClose` hook — single shutdown path for
+  production and tests
+- `backend/src/database/client.ts` retains `testConnection(pool)` as a
+  pure function taking the pool as an argument
+- `--forceExit` removed from `backend/package.json` `test:integration`
+  script; `jest --detectOpenHandles` reports zero open handles
+- Integration test for `/health` rewritten to inject a stub pool to
+  `buildApp({ pool })`, exercising the real plugin glue without relying
+  on Jest's ESM module mocking

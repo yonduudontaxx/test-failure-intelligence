@@ -1,31 +1,36 @@
-import { type FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import type { Pool, PoolClient } from 'pg';
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { buildApp } from '../../src/app.js';
 
-jest.unstable_mockModule('../../src/database/client.js', () => ({
-  testConnection: jest.fn(),
-  pool: { on: jest.fn() },
-}));
-
-const { buildApp } = await import('../../src/app.js');
-const { testConnection } = await import('../../src/database/client.js');
-
-const mockTestConnection = jest.mocked(testConnection);
 const ISO_8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function makeStubPool(connectImpl: () => Promise<PoolClient>): Pool {
+  return {
+    connect: jest.fn(connectImpl),
+    on: jest.fn(),
+    end: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  } as unknown as Pool;
+}
+
+function makeReachableClient(): PoolClient {
+  return {
+    query: jest.fn<() => Promise<{ rows: unknown[] }>>().mockResolvedValue({ rows: [{}] }),
+    release: jest.fn(),
+  } as unknown as PoolClient;
+}
 
 describe('GET /health', () => {
   let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = await buildApp({ logger: false });
-  });
 
   afterEach(async () => {
     await app.close();
   });
 
   describe('when the database is reachable', () => {
-    beforeEach(() => {
-      mockTestConnection.mockResolvedValue(true);
+    beforeEach(async () => {
+      const pool = makeStubPool(async () => makeReachableClient());
+      app = await buildApp({ pool, logger: false });
     });
 
     it('returns HTTP 200', async () => {
@@ -53,8 +58,11 @@ describe('GET /health', () => {
   });
 
   describe('when the database is unreachable', () => {
-    beforeEach(() => {
-      mockTestConnection.mockResolvedValue(false);
+    beforeEach(async () => {
+      const pool = makeStubPool(async () => {
+        throw new Error('ECONNREFUSED');
+      });
+      app = await buildApp({ pool, logger: false });
     });
 
     it('returns HTTP 200', async () => {
