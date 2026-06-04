@@ -2,8 +2,10 @@ import fp from 'fastify-plugin';
 import type { Pool } from 'pg';
 import type { ProjectRepository } from '../../domain/ports/project.repository.js';
 import type { TestRunRepository } from '../../domain/ports/test-run.repository.js';
+import type { TestCaseRepository } from '../../domain/ports/test-case.repository.js';
 import { PgProjectRepository } from '../../infrastructure/repositories/pg-project.repository.js';
 import { PgTestRunRepository } from '../../infrastructure/repositories/pg-test-run.repository.js';
+import { PgTestCaseRepository } from '../../infrastructure/repositories/pg-test-case.repository.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -11,6 +13,7 @@ declare module 'fastify' {
     repos: {
       projects: ProjectRepository;
       testRuns: TestRunRepository;
+      testCases: TestCaseRepository;
     };
   }
 }
@@ -25,6 +28,7 @@ export default fp<RepositoriesPluginOptions>(
     fastify.decorate('repos', {
       projects: new PgProjectRepository(pool),
       testRuns: new PgTestRunRepository(pool),
+      testCases: new PgTestCaseRepository(pool),
     });
 
     pool.on('error', (err) => {
