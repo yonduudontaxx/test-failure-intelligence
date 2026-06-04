@@ -1,18 +1,6 @@
-import { Pool, type PoolClient } from 'pg';
-import { config } from '../config.js';
+import type { Pool, PoolClient } from 'pg';
 
-export const pool = new Pool({
-  connectionString: config.databaseUrl,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
-
-pool.on('error', (err: Error, _client: PoolClient) => {
-  console.error('Unexpected error on idle database client:', err);
-});
-
-export async function testConnection(): Promise<boolean> {
+export async function testConnection(pool: Pool): Promise<boolean> {
   let client: PoolClient | undefined;
   try {
     client = await pool.connect();
