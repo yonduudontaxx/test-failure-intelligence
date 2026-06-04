@@ -68,23 +68,42 @@ docker compose -f docker-compose.dev.yml down -v
 
 ## Running Tests
 
-Tests run without a database connection. All integration tests mock the database layer.
+The backend has two test layers with different infrastructure needs:
+
+- **Unit tests** (`tests/unit/`) — pure TypeScript, no database, run in parallel.
+- **Integration tests** (`tests/integration/`) — exercise the real PostgreSQL repositories and Fastify route handlers against a dedicated `tfi_test` database. Run serially (`--runInBand`) to avoid cross-file truncation races on a shared database.
+
+### One-time test database setup
+
+The integration suite uses a separate `tfi_test` database alongside `tfi_dev`. Create it once per machine after starting the Docker Compose dev Postgres:
+
+```bash
+docker compose -f docker-compose.dev.yml up postgres -d
+docker compose -f docker-compose.dev.yml exec postgres \
+  psql -U tfi -d postgres -c "CREATE DATABASE tfi_test OWNER tfi"
+```
+
+The database is created empty; the first `npm run test:integration` run applies all migrations via the suite's `globalSetup`.
+
+### Running the suites
 
 ```bash
 cd backend
 
-# All tests
-npm test
-
-# Unit tests only
+# Unit only — fast (~1s), no DB needed
 npm run test:unit
 
-# Integration tests only
+# Integration only — requires tfi_test, ~5s
 npm run test:integration
 
-# With coverage report
+# Both, serially
+npm test
+
+# Coverage report (both layers)
 npm run test:coverage
 ```
+
+In CI, the workflow provisions an ephemeral `postgres:16-alpine` service container with `tfi_test` pre-created via the image's `POSTGRES_DB` env — no manual step required. See `.github/workflows/ci.yml`.
 
 ## npm Scripts
 
