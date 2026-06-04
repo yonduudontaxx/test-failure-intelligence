@@ -9,6 +9,22 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tfi
+          POSTGRES_PASSWORD: tfi_dev_password
+          POSTGRES_DB: tfi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test
     defaults:
       run:
         working-directory: backend
@@ -27,7 +43,9 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm test
+      - run: npm run test:unit
+
+      - run: npm run test:integration
 
       - run: npm run build
 
