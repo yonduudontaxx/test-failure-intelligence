@@ -12,9 +12,9 @@
     "lint:fix": "eslint src tests --fix --no-error-on-unmatched-pattern",
     "format": "prettier --write src tests",
     "format:check": "prettier --check src tests",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/unit",
-    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --passWithNoTests",
+    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/integration --passWithNoTests --runInBand",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down 1"
