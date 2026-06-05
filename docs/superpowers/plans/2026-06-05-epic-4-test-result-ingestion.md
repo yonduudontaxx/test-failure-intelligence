@@ -579,10 +579,10 @@ No new repositories. No new ports. The use case consumes the existing `TestRunRe
 
 The Fastify decorator pattern from Epic 2 (`backend/src/http/plugins/repositories.ts`) is the sole DI mechanism. The route handler reads `request.server.pool`, `request.server.repos.testRuns`, and `request.server.repos.testCases` from the existing decorations.
 
-No new decorator for adapters: they are pure functions, stateless, with no construction-time dependencies. The route file owns a small map:
+No new decorator for adapters: they are pure functions, stateless, with no construction-time dependencies. The `adaptersBySourceType` map is defined **inline at the top of `backend/src/http/routes/projects/ingest.route.ts`** — no separate `adapter-registry.ts` (or any other sibling file) is created in this epic:
 
 ```ts
-// inside ingest.route.ts (or a sibling file)
+// at the top of ingest.route.ts, above the route handler
 const adaptersBySourceType: Record<SourceType, IngestionAdapter> = {
   api:         canonicalJsonAdapter,
   json:        canonicalJsonAdapter,
@@ -591,6 +591,8 @@ const adaptersBySourceType: Record<SourceType, IngestionAdapter> = {
   junit_xml:   junitXmlAdapter,
 };
 ```
+
+Five lines, stateless, no behaviour to test in isolation. Extracting it into its own module would add a file with no functionality of its own, which the §2 KISS constraint ("no plugin layer for adapters") rules out. If a future epic grows the map (per-tenant overrides, plug-in adapters, etc.), extraction can happen then — YAGNI for now.
 
 This matches the rationale in Epic 3 plan §7 ("use cases have no construction-time dependencies … wrapping them in a decorator would add ceremony with no payoff") and Epic 2's KISS choice against a DI container.
 
