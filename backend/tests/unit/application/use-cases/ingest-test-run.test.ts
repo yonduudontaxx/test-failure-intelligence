@@ -332,6 +332,125 @@ describe('ingestTestRun', () => {
     });
   });
 
+  describe('overrides merging', () => {
+    it('uses overrides.branch when supplied', async () => {
+      const client = makeStubClient();
+      const pool = makeStubPool(client);
+      const { runRepo, runCreate, caseRepo } = makeRepos();
+      runCreate.mockResolvedValue(sampleRun());
+
+      const adapter = makeAdapter({ metadata: {}, cases: [] });
+
+      await ingestTestRun(pool, runRepo, caseRepo, adapter, {
+        projectId: 'p-1',
+        sourceType: 'api',
+        raw: { kind: 'json', body: {} },
+        overrides: { branch: 'release-1.0' },
+      });
+
+      const callArg = runCreate.mock.calls[0][0];
+      expect(callArg.branch).toBe('release-1.0');
+    });
+
+    it('uses overrides.environment when supplied', async () => {
+      const client = makeStubClient();
+      const pool = makeStubPool(client);
+      const { runRepo, runCreate, caseRepo } = makeRepos();
+      runCreate.mockResolvedValue(sampleRun());
+
+      const adapter = makeAdapter({ metadata: {}, cases: [] });
+
+      await ingestTestRun(pool, runRepo, caseRepo, adapter, {
+        projectId: 'p-1',
+        sourceType: 'api',
+        raw: { kind: 'json', body: {} },
+        overrides: { environment: 'staging' },
+      });
+
+      const callArg = runCreate.mock.calls[0][0];
+      expect(callArg.environment).toBe('staging');
+    });
+
+    it('does not allow overrides to override projectId — input.projectId wins', async () => {
+      const client = makeStubClient();
+      const pool = makeStubPool(client);
+      const { runRepo, runCreate, caseRepo } = makeRepos();
+      runCreate.mockResolvedValue(sampleRun());
+
+      const adapter = makeAdapter({ metadata: {}, cases: [] });
+
+      const evilInput = {
+        projectId: 'p-from-input',
+        sourceType: 'api',
+        raw: { kind: 'json', body: {} },
+        overrides: { branch: 'main', projectId: 'p-from-override' },
+      } as unknown as Parameters<typeof ingestTestRun>[4];
+
+      await ingestTestRun(pool, runRepo, caseRepo, adapter, evilInput);
+
+      const callArg = runCreate.mock.calls[0][0];
+      expect(callArg.projectId).toBe('p-from-input');
+      expect(callArg.branch).toBe('main');
+    });
+
+    it('does not allow overrides to override status — derived status wins', async () => {
+      const client = makeStubClient();
+      const pool = makeStubPool(client);
+      const { runRepo, runCreate, caseRepo } = makeRepos();
+      runCreate.mockResolvedValue(sampleRun());
+
+      const adapter = makeAdapter({
+        metadata: {},
+        cases: [
+          {
+            testName: 'a',
+            fullName: 'a',
+            status: 'FAILED',
+            retryCount: 0,
+            metadata: {},
+          },
+        ],
+      });
+
+      const evilInput = {
+        projectId: 'p',
+        sourceType: 'api',
+        raw: { kind: 'json', body: {} },
+        overrides: { status: 'SUCCESS' },
+      } as unknown as Parameters<typeof ingestTestRun>[4];
+
+      await ingestTestRun(pool, runRepo, caseRepo, adapter, evilInput);
+
+      const callArg = runCreate.mock.calls[0][0];
+      expect(callArg.status).toBe('FAILED');
+    });
+
+    it('empty overrides preserves parsed branch and environment', async () => {
+      const client = makeStubClient();
+      const pool = makeStubPool(client);
+      const { runRepo, runCreate, caseRepo } = makeRepos();
+      runCreate.mockResolvedValue(sampleRun());
+
+      const adapter = makeAdapter({
+        metadata: {},
+        branch: 'from-parsed',
+        environment: 'ci',
+        cases: [],
+      });
+
+      await ingestTestRun(pool, runRepo, caseRepo, adapter, {
+        projectId: 'p',
+        sourceType: 'api',
+        raw: { kind: 'json', body: {} },
+        overrides: {},
+      });
+
+      const callArg = runCreate.mock.calls[0][0];
+      expect(callArg.branch).toBe('from-parsed');
+      expect(callArg.environment).toBe('ci');
+    });
+  });
+
   describe('transactional persistence', () => {
     it('passes the same TxClient to both runRepo.create and caseRepo.createMany', async () => {
       const client = makeStubClient();

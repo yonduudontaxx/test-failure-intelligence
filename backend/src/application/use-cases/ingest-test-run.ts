@@ -32,6 +32,7 @@ export async function ingestTestRun(
     const run = await runRepo.create(
       {
         ...runFields,
+        ...input.overrides,
         projectId: input.projectId,
         sourceType: input.sourceType,
         status,
