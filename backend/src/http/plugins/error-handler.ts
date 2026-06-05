@@ -1,7 +1,8 @@
 import fp from 'fastify-plugin';
 import type { FastifyError } from 'fastify';
 import { failure } from '../helpers/envelope.js';
-import { UniqueConstraintError } from '../../domain/errors/index.js';
+import { ForeignKeyError, UniqueConstraintError } from '../../domain/errors/index.js';
+import { IngestionFailedError } from '../../application/ingestion/errors.js';
 
 const API_PREFIX = '/api/v1';
 const PROJECTS_PREFIX = '/api/v1/projects';
@@ -22,6 +23,16 @@ export default fp(
 
       if (err instanceof UniqueConstraintError && err.constraint === 'projects_slug_key') {
         reply.code(409).send(failure('DUPLICATE_PROJECT_SLUG', err.message));
+        return;
+      }
+
+      if (err instanceof IngestionFailedError) {
+        reply.code(422).send(failure('INGESTION_FAILED', err.message));
+        return;
+      }
+
+      if (err instanceof ForeignKeyError && err.constraint === 'test_runs_project_id_fkey') {
+        reply.code(404).send(failure('PROJECT_NOT_FOUND', 'Project not found'));
         return;
       }
 
