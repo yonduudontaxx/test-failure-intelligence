@@ -160,7 +160,17 @@ Copy `backend/.env.example` to `backend/.env` to get started with local defaults
 
 ## API Documentation
 
-Swagger UI is available at `http://localhost:3001/documentation` when the backend is running.
+Swagger UI is available at `http://localhost:3001/documentation` when the backend is running. Full request and response schemas for every endpoint are auto-generated there.
+
+### Projects (`/api/v1/projects`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/projects` | Create a project with a unique kebab-case `slug`, a `name`, and optional `description` |
+| `GET` | `/api/v1/projects` | Paginated list of projects, newest first; supports `?page=` and `?limit=` |
+| `GET` | `/api/v1/projects/:projectId` | Fetch a single project by id |
+
+All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions, the error-code table, and the checklist for adding new endpoints.
 
 ## Production Docker Compose
 
