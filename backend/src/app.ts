@@ -5,6 +5,7 @@ import type { Pool } from 'pg';
 import { config } from './config.js';
 import swaggerPlugin from './http/plugins/swagger.js';
 import repositoriesPlugin from './http/plugins/repositories.js';
+import errorHandlerPlugin from './http/plugins/error-handler.js';
 import healthRoutes from './http/routes/health.js';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -22,6 +23,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.register(sensible);
   app.register(cors);
   app.register(swaggerPlugin);
+  app.register(errorHandlerPlugin);
   app.register(healthRoutes);
 
   await app.ready();
