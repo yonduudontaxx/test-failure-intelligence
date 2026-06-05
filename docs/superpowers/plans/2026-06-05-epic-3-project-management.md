@@ -87,7 +87,7 @@ fastify.post<{ Body: CreateProjectBody }>('/projects', { schema }, async (req, r
 });
 ```
 
-The use case stays in this signature for Epic 4/5 too: the only thing that grows is the orchestration body (e.g., `ingestTestRun` will call multiple repositories inside a `withTransaction`).
+The use case shape stays the same for Epic 4/5 — explicit dependencies followed by an input object — the only thing that grows is the number of dependency arguments (e.g., `ingestTestRun(runRepo, caseRepo, pool, input)` will orchestrate multiple repositories inside a `withTransaction`, with the route handler extracting each dependency from `req.server` and passing it explicitly).
 
 ---
 
@@ -259,9 +259,13 @@ export function failure(code: string, message: string, details?: unknown[]): Err
 
 ### 5.2 Error handler — `backend/src/http/error-handler.ts`
 
-A single `setErrorHandler` registered in `app.ts` after all plugins are loaded. Logic, in order:
+A single `setErrorHandler` registered in `app.ts` after all plugins are loaded. The domain-error envelope wrapping applies **only** to requests where `request.url` starts with `/api/v1`. Requests outside that prefix (`/health`, `/documentation`, and any future non-API routes) bypass all wrapping branches and fall through to Fastify's default error serialization, preserving the existing health-endpoint response shape.
+
+Logic, in order:
 
 ```
+if (request.url does not start with '/api/v1')
+                                          → pass through; Fastify default serializer handles it
 if (err is FastifyError with validation)  → 400 VALIDATION_ERROR  (details = err.validation array)
 if (err is UniqueConstraintError && err.constraint == 'projects_slug_key')
                                           → 409 DUPLICATE_PROJECT_SLUG  (details = { field: 'slug', value })
@@ -364,7 +368,7 @@ fastify.post<{ Body: CreateProjectBody }>(
 ### Why not also decorate use cases (`app.useCases.projects.create`)
 
 - Use cases have no construction-time dependencies. The only thing they need (`ProjectRepository`) is passed in at call-time as a function argument. Wrapping them in a decorator would add ceremony with no payoff.
-- When Epic 4 introduces a `ingestTestRun` use case that needs `Pool` (for `withTransaction`) plus three repositories, the route can still call `ingestTestRun(req.server, req.body)` directly — same shape, no plugin needed.
+- When Epic 4 introduces an `ingestTestRun` use case that needs `Pool` (for `withTransaction`) plus three repositories, the route handler extracts each dependency from `req.server.repos` and `req.server.pool` and passes them explicitly: `ingestTestRun(runRepo, caseRepo, pool, input)`. This is the same pattern as Epic 3 — the only thing that grows is the number of arguments, not the shape. Passing `req.server` (or `req.body`) directly into a use case is explicitly **not** the convention: it would leak HTTP types into the domain and violate the domain-only-inputs criterion stated in §6. No plugin needed.
 - This matches Epic 2's reasoning (§7) for choosing decorators over a DI container: one composition root, idiomatic Fastify, zero magic.
 
 ### Test paths
@@ -400,6 +404,8 @@ Names are not trimmed by the server — `minLength: 1` after Ajv coercion is eno
 ---
 
 ## 9. Error handling matrix
+
+This matrix describes the error envelope behavior for routes under `/api/v1`. Errors on non-`/api/v1` routes (e.g., `/health`) are **not** wrapped in the envelope — they pass through to Fastify's default error serialization so the existing health response shape is preserved.
 
 | Scenario | HTTP | `error.code` | `error.message` | `details` |
 |---|---|---|---|---|
@@ -486,11 +492,13 @@ Each task is one logical commit per `memory/workflow.md`. Acceptance criteria ar
 **Acceptance criteria:**
 - Exports a `fastify-plugin`-wrapped plugin that calls `fastify.setErrorHandler(...)`
 - Handler logic:
+  - **Path gate (precedes all wrapping branches):** if `request.url` does not start with `/api/v1`, the handler does **not** wrap the error — control falls through to Fastify's default error serialization. This preserves the existing `/health` response shape and any future non-`/api/v1` routes.
   - `err.validation` present → `400` + `failure('VALIDATION_ERROR', 'Request validation failed', err.validation)`
   - `err instanceof UniqueConstraintError && err.constraint === 'projects_slug_key'` → `409` + `failure('DUPLICATE_PROJECT_SLUG', \`A project with slug "${value}" already exists.\`, [{ field: 'slug', value }])` where `value` is parsed from `err.detail`
   - `err.statusCode === 404` and request path begins with `/api/v1/projects/` → `404` + `failure('PROJECT_NOT_FOUND', err.message)`
   - Otherwise → log full error, respond `500` + `failure('INTERNAL_ERROR', 'Internal server error')`
-- Unit test exercises each branch by registering a route that throws the relevant error and asserting status + body
+- Unit test exercises each wrapping branch by registering a route under `/api/v1/...` that throws the relevant error and asserting status + body
+- Errors on non-`/api/v1` routes (e.g., `GET /health` with a simulated DB failure) are **not** wrapped in the domain error envelope — unit test asserts the response uses Fastify's default error shape, not `{ error: { code, message } }`
 - 500 branch asserts that `fastify.log.error` was called with the original error
 - `npm run typecheck && npm run lint && npm run test:unit` all exit 0
 
