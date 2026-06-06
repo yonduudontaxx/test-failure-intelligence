@@ -43,8 +43,12 @@ export interface TestCaseRepository {
 
   /**
    * Returns one `ReliabilitySummary` per unique `fullName` in the project,
-   * computed from the last `window` executions (sorted by parent run's
-   * `executedAt DESC, ingestedAt DESC`).
+   * computed across all executions within the trailing `window.days` time
+   * range (sorted by parent run's `executedAt DESC, ingestedAt DESC`).
+   * Tests with no executions in the window are omitted from the result.
    */
-  computeReliabilitySummaries(projectId: string, window: number): Promise<ReliabilitySummary[]>;
+  computeReliabilitySummaries(
+    projectId: string,
+    window: { days: number },
+  ): Promise<ReliabilitySummary[]>;
 }

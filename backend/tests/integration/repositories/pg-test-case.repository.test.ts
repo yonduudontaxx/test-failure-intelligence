@@ -303,4 +303,270 @@ describe('PgTestCaseRepository (integration)', () => {
       expect(cases[0].projectId).toBe(projectId);
     });
   });
+
+  describe('countByProject', () => {
+    it('returns 0 when the project has no test case results', async () => {
+      expect(await repo.countByProject(projectId)).toBe(0);
+    });
+
+    it('returns the total count of case results for the project', async () => {
+      await repo.createMany([
+        makeCase({ fullName: 'Suite > a', testName: 'a' }),
+        makeCase({ fullName: 'Suite > b', testName: 'b' }),
+        makeCase({ fullName: 'Suite > c', testName: 'c' }),
+      ]);
+      expect(await repo.countByProject(projectId)).toBe(3);
+    });
+
+    it('excludes case results belonging to a different project', async () => {
+      const otherProject = await projectRepo.create({
+        slug: 'other-svc',
+        name: 'Other',
+      });
+      const otherRun = await runRepo.create({
+        ...makeNewRun(),
+        projectId: otherProject.id,
+      });
+      await repo.createMany([
+        makeCase({ fullName: 'mine' }),
+        {
+          ...makeCase(),
+          projectId: otherProject.id,
+          testRunId: otherRun.id,
+          fullName: 'theirs',
+        },
+      ]);
+      expect(await repo.countByProject(projectId)).toBe(1);
+      expect(await repo.countByProject(otherProject.id)).toBe(1);
+    });
+  });
+
+  describe('countByStatus', () => {
+    it('counts PASSED results scoped to the project', async () => {
+      await repo.createMany([
+        makeCase({ fullName: 'a', testName: 'a', status: 'PASSED' }),
+        makeCase({ fullName: 'b', testName: 'b', status: 'PASSED' }),
+        makeCase({ fullName: 'c', testName: 'c', status: 'FAILED' }),
+      ]);
+      expect(await repo.countByStatus(projectId, 'PASSED')).toBe(2);
+      expect(await repo.countByStatus(projectId, 'FAILED')).toBe(1);
+      expect(await repo.countByStatus(projectId, 'SKIPPED')).toBe(0);
+    });
+
+    it('excludes case results from other projects', async () => {
+      const otherProject = await projectRepo.create({
+        slug: 'other-svc',
+        name: 'Other',
+      });
+      const otherRun = await runRepo.create({
+        ...makeNewRun(),
+        projectId: otherProject.id,
+      });
+      await repo.createMany([
+        makeCase({ fullName: 'a', status: 'FAILED' }),
+        {
+          ...makeCase(),
+          projectId: otherProject.id,
+          testRunId: otherRun.id,
+          fullName: 'b',
+          status: 'FAILED',
+        },
+        {
+          ...makeCase(),
+          projectId: otherProject.id,
+          testRunId: otherRun.id,
+          fullName: 'c',
+          status: 'FAILED',
+        },
+      ]);
+      expect(await repo.countByStatus(projectId, 'FAILED')).toBe(1);
+      expect(await repo.countByStatus(otherProject.id, 'FAILED')).toBe(2);
+    });
+  });
+
+  describe('computeReliabilitySummaries', () => {
+    const STANDARD_WINDOW = { days: 30 };
+    const ISO_RECENT = new Date(); // executedAt within the 30-day window
+
+    async function seedRun(overrides: Partial<NewTestRun> = {}): Promise<string> {
+      const run = await runRepo.create({
+        ...makeNewRun(),
+        executedAt: ISO_RECENT,
+        ...overrides,
+      });
+      return run.id;
+    }
+
+    it('returns [] when the project has no runs in window', async () => {
+      const result = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(result).toEqual([]);
+    });
+
+    it('returns a single summary with passCount when one test passes once', async () => {
+      const runId = await seedRun();
+      await repo.createMany([
+        {
+          ...makeCase(),
+          testRunId: runId,
+          fullName: 'Suite > t1',
+          testName: 't1',
+          suiteName: 'Suite',
+          status: 'PASSED',
+        },
+      ]);
+      const result = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        fullName: 'Suite > t1',
+        suiteName: 'Suite',
+        testName: 't1',
+        passCount: 1,
+        failCount: 0,
+        skippedCount: 0,
+        lastStatus: 'PASSED',
+      });
+      expect(result[0].lastExecutedAt).toBeInstanceOf(Date);
+    });
+
+    it('aggregates mixed PASSED/FAILED across multiple runs for the same test', async () => {
+      const fullName = 'Suite > flaky';
+      const cases = (status: 'PASSED' | 'FAILED') => ({
+        ...makeCase(),
+        fullName,
+        testName: 'flaky',
+        suiteName: 'Suite',
+        status,
+      });
+      const run1 = await seedRun({
+        executedAt: new Date(Date.now() - 86_400_000 * 3),
+      });
+      const run2 = await seedRun({
+        executedAt: new Date(Date.now() - 86_400_000 * 2),
+      });
+      const run3 = await seedRun({
+        executedAt: new Date(Date.now() - 86_400_000 * 1),
+      });
+      await repo.createMany([
+        { ...cases('PASSED'), testRunId: run1 },
+        { ...cases('FAILED'), testRunId: run2 },
+        { ...cases('PASSED'), testRunId: run3 },
+      ]);
+      const [summary] = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(summary.passCount).toBe(2);
+      expect(summary.failCount).toBe(1);
+      expect(summary.skippedCount).toBe(0);
+      expect(summary.lastStatus).toBe('PASSED'); // run3 is most recent
+    });
+
+    it('emits one summary per distinct fullName', async () => {
+      const runId = await seedRun();
+      await repo.createMany([
+        {
+          ...makeCase(),
+          testRunId: runId,
+          fullName: 'Suite > a',
+          testName: 'a',
+        },
+        {
+          ...makeCase(),
+          testRunId: runId,
+          fullName: 'Suite > b',
+          testName: 'b',
+          status: 'FAILED',
+        },
+        {
+          ...makeCase(),
+          testRunId: runId,
+          fullName: 'Suite > c',
+          testName: 'c',
+          status: 'SKIPPED',
+        },
+      ]);
+      const summaries = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(summaries.map((s) => s.fullName).sort()).toEqual([
+        'Suite > a',
+        'Suite > b',
+        'Suite > c',
+      ]);
+    });
+
+    it('excludes runs whose executedAt falls outside the window', async () => {
+      // One run inside the window, one well outside (45 days ago, window is 30 days)
+      const recentRun = await seedRun({ executedAt: new Date() });
+      const ancientRun = await seedRun({
+        executedAt: new Date(Date.now() - 86_400_000 * 45),
+      });
+      const fullName = 'Suite > t';
+      await repo.createMany([
+        {
+          ...makeCase(),
+          testRunId: recentRun,
+          fullName,
+          testName: 't',
+          status: 'PASSED',
+        },
+        {
+          ...makeCase(),
+          testRunId: ancientRun,
+          fullName,
+          testName: 't',
+          status: 'FAILED',
+        },
+      ]);
+      const [summary] = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(summary.passCount).toBe(1);
+      expect(summary.failCount).toBe(0); // the FAILED ancient run is outside the window
+    });
+
+    it('isolates results to the requested project', async () => {
+      const otherProject = await projectRepo.create({
+        slug: 'other-svc',
+        name: 'Other',
+      });
+      const otherRun = await runRepo.create({
+        ...makeNewRun(),
+        projectId: otherProject.id,
+        executedAt: new Date(),
+      });
+      const myRun = await seedRun();
+      await repo.createMany([
+        {
+          ...makeCase(),
+          testRunId: myRun,
+          fullName: 'mine',
+          testName: 'mine',
+        },
+        {
+          ...makeCase(),
+          projectId: otherProject.id,
+          testRunId: otherRun.id,
+          fullName: 'theirs',
+          testName: 'theirs',
+        },
+      ]);
+      const mine = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      const theirs = await repo.computeReliabilitySummaries(otherProject.id, STANDARD_WINDOW);
+      expect(mine.map((s) => s.fullName)).toEqual(['mine']);
+      expect(theirs.map((s) => s.fullName)).toEqual(['theirs']);
+    });
+
+    it('counts SKIPPED in skippedCount but excludes from pass/fail counts', async () => {
+      const runId = await seedRun();
+      const fullName = 'Suite > maybe';
+      await repo.createMany([
+        {
+          ...makeCase(),
+          testRunId: runId,
+          fullName,
+          testName: 'maybe',
+          status: 'SKIPPED',
+        },
+      ]);
+      const [summary] = await repo.computeReliabilitySummaries(projectId, STANDARD_WINDOW);
+      expect(summary.passCount).toBe(0);
+      expect(summary.failCount).toBe(0);
+      expect(summary.skippedCount).toBe(1);
+      expect(summary.lastStatus).toBe('SKIPPED');
+    });
+  });
 });
