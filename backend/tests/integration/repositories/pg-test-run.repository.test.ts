@@ -319,4 +319,194 @@ describe('PgTestRunRepository (integration)', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('countByProject', () => {
+    it('returns 0 when the project has no runs', async () => {
+      expect(await repo.countByProject(projectId)).toBe(0);
+    });
+
+    it('returns the total count of runs for the project', async () => {
+      await repo.create(makeNewRun());
+      await repo.create(makeNewRun());
+      await repo.create(makeNewRun());
+      expect(await repo.countByProject(projectId)).toBe(3);
+    });
+
+    it('excludes runs from other projects', async () => {
+      const otherProject = await projectRepo.create({
+        slug: 'other-svc',
+        name: 'Other',
+      });
+      await repo.create(makeNewRun());
+      await repo.create({ ...makeNewRun(), projectId: otherProject.id });
+      await repo.create({ ...makeNewRun(), projectId: otherProject.id });
+      expect(await repo.countByProject(projectId)).toBe(1);
+      expect(await repo.countByProject(otherProject.id)).toBe(2);
+    });
+  });
+
+  describe('findFailureTrend', () => {
+    function daysAgo(n: number): Date {
+      return new Date(Date.now() - n * 86_400_000);
+    }
+
+    it('returns [] when no runs exist in the window', async () => {
+      const result = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+      expect(result).toEqual([]);
+    });
+
+    it('returns one bucket per day with totalRuns, failedRuns, and passRate', async () => {
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(2) });
+      await repo.create({
+        ...makeNewRun(),
+        executedAt: daysAgo(2),
+        status: 'FAILED',
+      });
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(1) });
+
+      const result = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+
+      expect(result).toHaveLength(2);
+      // Oldest bucket first
+      expect(result[0].totalRuns).toBe(2);
+      expect(result[0].failedRuns).toBe(1);
+      expect(result[0].passRate).toBeCloseTo(0.5, 5);
+      expect(result[1].totalRuns).toBe(1);
+      expect(result[1].failedRuns).toBe(0);
+      expect(result[1].passRate).toBeCloseTo(1, 5);
+      // date is YYYY-MM-DD
+      expect(result[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('excludes runs whose executedAt is outside the days window', async () => {
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(5) });
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(45) });
+
+      const result = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].totalRuns).toBe(1);
+    });
+
+    it('isolates buckets to the requested project', async () => {
+      const otherProject = await projectRepo.create({
+        slug: 'other-svc',
+        name: 'Other',
+      });
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(1) });
+      await repo.create({
+        ...makeNewRun(),
+        projectId: otherProject.id,
+        executedAt: daysAgo(1),
+        status: 'FAILED',
+      });
+      await repo.create({
+        ...makeNewRun(),
+        projectId: otherProject.id,
+        executedAt: daysAgo(1),
+        status: 'FAILED',
+      });
+
+      const mine = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+      const theirs = await repo.findFailureTrend(otherProject.id, {
+        days: 30,
+        bucketSize: 'day',
+      });
+
+      expect(mine).toHaveLength(1);
+      expect(mine[0].totalRuns).toBe(1);
+      expect(mine[0].failedRuns).toBe(0);
+      expect(theirs).toHaveLength(1);
+      expect(theirs[0].totalRuns).toBe(2);
+      expect(theirs[0].failedRuns).toBe(2);
+      expect(theirs[0].passRate).toBeCloseTo(0, 5);
+    });
+
+    it('counts FAILED runs in failedRuns (PARTIAL is not counted as failed)', async () => {
+      const sameDay = daysAgo(1);
+      await repo.create({
+        ...makeNewRun(),
+        executedAt: sameDay,
+        status: 'SUCCESS',
+      });
+      await repo.create({
+        ...makeNewRun(),
+        executedAt: sameDay,
+        status: 'FAILED',
+      });
+      await repo.create({
+        ...makeNewRun(),
+        executedAt: sameDay,
+        status: 'PARTIAL',
+      });
+
+      const [bucket] = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+      expect(bucket.totalRuns).toBe(3);
+      expect(bucket.failedRuns).toBe(1);
+      expect(bucket.passRate).toBeCloseTo(2 / 3, 5);
+    });
+
+    it('returns buckets in date ASC order (oldest first)', async () => {
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(1) });
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(5) });
+      await repo.create({ ...makeNewRun(), executedAt: daysAgo(10) });
+
+      const result = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'day',
+      });
+      expect(result).toHaveLength(3);
+      expect(result[0].date < result[1].date).toBe(true);
+      expect(result[1].date < result[2].date).toBe(true);
+    });
+
+    it('groups runs from the same week into one bucket when bucketSize is "week"', async () => {
+      // Three runs spread across three days in the SAME ISO week — find a
+      // monday-based reference and place runs on Mon, Wed, Fri of that week.
+      const now = new Date();
+      const dow = now.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+      // Find the most recent Monday that is at least 8 days ago to keep things
+      // safely inside the 30-day window.
+      const daysSinceMonday = (dow + 6) % 7;
+      const referenceMonday = new Date(now);
+      referenceMonday.setUTCDate(now.getUTCDate() - daysSinceMonday - 7);
+      referenceMonday.setUTCHours(10, 0, 0, 0);
+
+      const wednesday = new Date(referenceMonday);
+      wednesday.setUTCDate(referenceMonday.getUTCDate() + 2);
+      const friday = new Date(referenceMonday);
+      friday.setUTCDate(referenceMonday.getUTCDate() + 4);
+
+      await repo.create({ ...makeNewRun(), executedAt: referenceMonday });
+      await repo.create({ ...makeNewRun(), executedAt: wednesday });
+      await repo.create({
+        ...makeNewRun(),
+        executedAt: friday,
+        status: 'FAILED',
+      });
+
+      const result = await repo.findFailureTrend(projectId, {
+        days: 30,
+        bucketSize: 'week',
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].totalRuns).toBe(3);
+      expect(result[0].failedRuns).toBe(1);
+      expect(result[0].passRate).toBeCloseTo(2 / 3, 5);
+    });
+  });
 });

@@ -169,18 +169,53 @@ export class PgTestRunRepository implements TestRunRepository {
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   }
 
-  // Analytics queries — port extensions land here. Real implementations come in Task 5
-  // of the Epic 5 plan; for now the stubs throw so the class satisfies the extended
-  // TestRunRepository interface and `npm run typecheck` passes.
-
-  async countByProject(_projectId: string): Promise<number> {
-    throw new Error('PgTestRunRepository.countByProject not implemented yet (Task 5)');
+  async countByProject(projectId: string): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM test_runs WHERE project_id = $1`,
+      [projectId],
+    );
+    return parseInt(result.rows[0].count, 10);
   }
 
   async findFailureTrend(
-    _projectId: string,
-    _opts: { from: Date; to: Date },
+    projectId: string,
+    opts: { days: number; bucketSize: 'day' | 'week' },
   ): Promise<DailyFailureBucket[]> {
-    throw new Error('PgTestRunRepository.findFailureTrend not implemented yet (Task 5)');
+    const cutoff = new Date(Date.now() - opts.days * 86_400_000);
+    const result = await this.pool.query<FailureTrendRow>(
+      `
+      SELECT
+        TO_CHAR(
+          DATE_TRUNC($3, COALESCE(executed_at, ingested_at) AT TIME ZONE 'UTC'),
+          'YYYY-MM-DD'
+        ) AS bucket_date,
+        COUNT(*)::text AS total_runs,
+        COUNT(*) FILTER (WHERE status = 'FAILED')::text AS failed_runs
+      FROM test_runs
+      WHERE project_id = $1
+        AND COALESCE(executed_at, ingested_at) >= $2
+      GROUP BY bucket_date
+      ORDER BY bucket_date ASC
+      `,
+      [projectId, cutoff, opts.bucketSize],
+    );
+    return result.rows.map(mapTrendRow);
   }
+}
+
+interface FailureTrendRow extends QueryResultRow {
+  bucket_date: string;
+  total_runs: string;
+  failed_runs: string;
+}
+
+function mapTrendRow(row: FailureTrendRow): DailyFailureBucket {
+  const totalRuns = parseInt(row.total_runs, 10);
+  const failedRuns = parseInt(row.failed_runs, 10);
+  return {
+    date: row.bucket_date,
+    totalRuns,
+    failedRuns,
+    passRate: totalRuns === 0 ? 1 : (totalRuns - failedRuns) / totalRuns,
+  };
 }
