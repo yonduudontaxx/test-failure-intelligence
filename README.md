@@ -169,8 +169,9 @@ Swagger UI is available at `http://localhost:3001/documentation` when the backen
 | `POST` | `/api/v1/projects` | Create a project with a unique kebab-case `slug`, a `name`, and optional `description` |
 | `GET` | `/api/v1/projects` | Paginated list of projects, newest first; supports `?page=` and `?limit=` |
 | `GET` | `/api/v1/projects/:projectId` | Fetch a single project by id |
+| `POST` | `/api/v1/projects/:projectId/ingest` | Ingest a test run — either a canonical JSON body (`Content-Type: application/json`) or a multipart upload of a Playwright, Jest, JUnit XML, or generic JSON report file |
 
-All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions, the error-code table, and the checklist for adding new endpoints.
+All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions and the error-code table, and [docs/architecture/ingestion.md](docs/architecture/ingestion.md) for the ingestion adapter contract and supported source types.
 
 ## Production Docker Compose
 

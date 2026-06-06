@@ -50,13 +50,23 @@ Built via `failure(code, message)`. Both helpers are pure with no
 imports — they exist only to give the rest of the codebase a single
 construction site for the shapes.
 
+## Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/projects` | Create a project |
+| `GET` | `/api/v1/projects` | List projects (paginated) |
+| `GET` | `/api/v1/projects/:projectId` | Get a project by id |
+| `POST` | `/api/v1/projects/:projectId/ingest` | Ingest a test run (JSON body or multipart upload) — see [ingestion.md](./ingestion.md) |
+
 ## Error code reference
 
 | HTTP | `error.code` | Trigger |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Ajv schema validation failed (body, query, or params) |
-| 404 | `PROJECT_NOT_FOUND` | `GET /api/v1/projects/:projectId` for an unknown id |
+| 400 | `VALIDATION_ERROR` | Ajv schema validation failed (body, query, or params); procedural multipart-field validation in ingestion |
+| 404 | `PROJECT_NOT_FOUND` | `GET /api/v1/projects/:projectId` for an unknown id; `ForeignKeyError` on `test_runs_project_id_fkey` during ingestion |
 | 409 | `DUPLICATE_PROJECT_SLUG` | `UniqueConstraintError` on the `projects_slug_key` constraint |
+| 422 | `INGESTION_FAILED` | An ingestion adapter rejected the payload via `IngestionFailedError` (unknown test status, missing required structure, malformed XML or JSON file) |
 | 500 | `INTERNAL_ERROR` | Anything unhandled — full error logged via `fastify.log.error`, response carries a sanitized message |
 
 The mapping lives in `backend/src/http/plugins/error-handler.ts`.
