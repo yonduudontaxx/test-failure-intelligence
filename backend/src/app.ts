@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import type { Pool } from 'pg';
 import { config } from './config.js';
 import swaggerPlugin from './http/plugins/swagger.js';
@@ -10,6 +11,7 @@ import healthRoutes from './http/routes/health.js';
 import createProjectRoute from './http/routes/projects/create-project.route.js';
 import getProjectRoute from './http/routes/projects/get-project.route.js';
 import listProjectsRoute from './http/routes/projects/list-projects.route.js';
+import ingestRoute from './http/routes/projects/ingest.route.js';
 
 export interface BuildAppOptions extends FastifyServerOptions {
   pool: Pool;
@@ -28,10 +30,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.register(cors);
   app.register(swaggerPlugin);
   app.register(errorHandlerPlugin);
+  app.register(multipart, {
+    attachFieldsToBody: false,
+    limits: { fileSize: 5_242_880 },
+  });
   app.register(healthRoutes);
   app.register(createProjectRoute, { prefix: '/api/v1' });
   app.register(getProjectRoute, { prefix: '/api/v1' });
   app.register(listProjectsRoute, { prefix: '/api/v1' });
+  app.register(ingestRoute, { prefix: '/api/v1' });
 
   await app.ready();
   return app;
