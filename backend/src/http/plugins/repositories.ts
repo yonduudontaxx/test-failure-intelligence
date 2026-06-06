@@ -3,9 +3,11 @@ import type { Pool } from 'pg';
 import type { ProjectRepository } from '../../domain/ports/project.repository.js';
 import type { TestRunRepository } from '../../domain/ports/test-run.repository.js';
 import type { TestCaseRepository } from '../../domain/ports/test-case.repository.js';
+import type { FailurePatternRepository } from '../../domain/ports/failure-pattern.repository.js';
 import { PgProjectRepository } from '../../infrastructure/repositories/pg-project.repository.js';
 import { PgTestRunRepository } from '../../infrastructure/repositories/pg-test-run.repository.js';
 import { PgTestCaseRepository } from '../../infrastructure/repositories/pg-test-case.repository.js';
+import { PgFailurePatternRepository } from '../../infrastructure/repositories/pg-failure-pattern.repository.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -14,6 +16,7 @@ declare module 'fastify' {
       projects: ProjectRepository;
       testRuns: TestRunRepository;
       testCases: TestCaseRepository;
+      failurePatterns: FailurePatternRepository;
     };
   }
 }
@@ -29,6 +32,7 @@ export default fp<RepositoriesPluginOptions>(
       projects: new PgProjectRepository(pool),
       testRuns: new PgTestRunRepository(pool),
       testCases: new PgTestCaseRepository(pool),
+      failurePatterns: new PgFailurePatternRepository(pool),
     });
 
     pool.on('error', (err) => {
