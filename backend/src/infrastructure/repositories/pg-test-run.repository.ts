@@ -118,7 +118,13 @@ export class PgTestRunRepository implements TestRunRepository {
 
   async listByProject(
     projectId: string,
-    opts: { limit: number; offset: number; branch?: string; environment?: string },
+    opts: {
+      limit: number;
+      offset: number;
+      branch?: string;
+      environment?: string;
+      status?: TestRunStatus;
+    },
   ): Promise<{ items: TestRun[]; total: number }> {
     const where: string[] = ['project_id = $1'];
     const filterParams: unknown[] = [projectId];
@@ -131,6 +137,11 @@ export class PgTestRunRepository implements TestRunRepository {
     if (opts.environment !== undefined) {
       where.push(`environment = $${p}`);
       filterParams.push(opts.environment);
+      p += 1;
+    }
+    if (opts.status !== undefined) {
+      where.push(`status = $${p}`);
+      filterParams.push(opts.status);
       p += 1;
     }
     const whereSql = where.join(' AND ');

@@ -1,4 +1,5 @@
 import type { TestRun, NewTestRun } from '../entities/test-run.js';
+import type { TestRunStatus } from '../enums/test-run-status.js';
 import type { TxClient } from './tx-client.js';
 
 /**
@@ -25,7 +26,13 @@ export interface TestRunRepository {
 
   listByProject(
     projectId: string,
-    opts: { limit: number; offset: number; branch?: string; environment?: string },
+    opts: {
+      limit: number;
+      offset: number;
+      branch?: string;
+      environment?: string;
+      status?: TestRunStatus;
+    },
   ): Promise<{ items: TestRun[]; total: number }>;
 
   /** Returns the run with the most recent executedAt (NULLS LAST), or null if the project has no runs. */
