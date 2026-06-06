@@ -1,7 +1,10 @@
 import type { Pool, QueryResultRow } from '../database/types.js';
 import type { TestCaseResult, NewTestCaseResult } from '../../domain/entities/test-case-result.js';
 import type { TestCaseStatus } from '../../domain/enums/test-case-status.js';
-import type { TestCaseRepository } from '../../domain/ports/test-case.repository.js';
+import type {
+  ReliabilitySummary,
+  TestCaseRepository,
+} from '../../domain/ports/test-case.repository.js';
 import type { TxClient } from '../../domain/ports/tx-client.js';
 import { toDomainError } from '../database/pg-errors.js';
 
@@ -127,5 +130,26 @@ export class PgTestCaseRepository implements TestCaseRepository {
       .split(/,\s*/)
       .map((c) => `${prefix}.${c}`)
       .join(', ');
+  }
+
+  // Analytics queries — port extensions land here. Real implementations come in Task 4
+  // of the Epic 5 plan; for now the stubs throw so the class satisfies the extended
+  // TestCaseRepository interface and `npm run typecheck` passes.
+
+  async countByProject(_projectId: string): Promise<number> {
+    throw new Error('PgTestCaseRepository.countByProject not implemented yet (Task 4)');
+  }
+
+  async countByStatus(_projectId: string, _status: TestCaseStatus): Promise<number> {
+    throw new Error('PgTestCaseRepository.countByStatus not implemented yet (Task 4)');
+  }
+
+  async computeReliabilitySummaries(
+    _projectId: string,
+    _window: number,
+  ): Promise<ReliabilitySummary[]> {
+    throw new Error(
+      'PgTestCaseRepository.computeReliabilitySummaries not implemented yet (Task 4)',
+    );
   }
 }

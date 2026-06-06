@@ -2,7 +2,10 @@ import type { Pool, QueryResultRow } from '../database/types.js';
 import type { TestRun, NewTestRun } from '../../domain/entities/test-run.js';
 import type { SourceType } from '../../domain/enums/source-type.js';
 import type { TestRunStatus } from '../../domain/enums/test-run-status.js';
-import type { TestRunRepository } from '../../domain/ports/test-run.repository.js';
+import type {
+  DailyFailureBucket,
+  TestRunRepository,
+} from '../../domain/ports/test-run.repository.js';
 import type { TxClient } from '../../domain/ports/tx-client.js';
 import { toDomainError } from '../database/pg-errors.js';
 
@@ -164,5 +167,20 @@ export class PgTestRunRepository implements TestRunRepository {
       [projectId],
     );
     return result.rows[0] ? mapRow(result.rows[0]) : null;
+  }
+
+  // Analytics queries — port extensions land here. Real implementations come in Task 5
+  // of the Epic 5 plan; for now the stubs throw so the class satisfies the extended
+  // TestRunRepository interface and `npm run typecheck` passes.
+
+  async countByProject(_projectId: string): Promise<number> {
+    throw new Error('PgTestRunRepository.countByProject not implemented yet (Task 5)');
+  }
+
+  async findFailureTrend(
+    _projectId: string,
+    _opts: { from: Date; to: Date },
+  ): Promise<DailyFailureBucket[]> {
+    throw new Error('PgTestRunRepository.findFailureTrend not implemented yet (Task 5)');
   }
 }

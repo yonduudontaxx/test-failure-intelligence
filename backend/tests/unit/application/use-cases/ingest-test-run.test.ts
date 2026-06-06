@@ -33,6 +33,8 @@ function makeRepos() {
     findById: jest.fn<TestRunRepository['findById']>(),
     listByProject: jest.fn<TestRunRepository['listByProject']>(),
     findMostRecentByProject: jest.fn<TestRunRepository['findMostRecentByProject']>(),
+    countByProject: jest.fn<TestRunRepository['countByProject']>(),
+    findFailureTrend: jest.fn<TestRunRepository['findFailureTrend']>(),
   };
 
   const caseCreateMany = jest.fn<TestCaseRepository['createMany']>();
@@ -40,6 +42,9 @@ function makeRepos() {
     createMany: caseCreateMany,
     findByTestRun: jest.fn<TestCaseRepository['findByTestRun']>(),
     findRecentByFullName: jest.fn<TestCaseRepository['findRecentByFullName']>(),
+    countByProject: jest.fn<TestCaseRepository['countByProject']>(),
+    countByStatus: jest.fn<TestCaseRepository['countByStatus']>(),
+    computeReliabilitySummaries: jest.fn<TestCaseRepository['computeReliabilitySummaries']>(),
   };
 
   return { runRepo, runCreate, caseRepo, caseCreateMany };
