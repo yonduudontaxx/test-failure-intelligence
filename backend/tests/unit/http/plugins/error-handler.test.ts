@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import Fastify, { type FastifyInstance } from 'fastify';
 import sensible from '@fastify/sensible';
 import errorHandlerPlugin from '../../../../src/http/plugins/error-handler.js';
-import { UniqueConstraintError } from '../../../../src/domain/errors/index.js';
+import { ForeignKeyError, UniqueConstraintError } from '../../../../src/domain/errors/index.js';
+import { IngestionFailedError } from '../../../../src/application/ingestion/errors.js';
 
 describe('error-handler plugin', () => {
   let app: FastifyInstance;
@@ -40,6 +41,24 @@ describe('error-handler plugin', () => {
 
     app.get('/api/v1/boom', async () => {
       throw new Error('database exploded; secret token: abc123');
+    });
+
+    app.get('/api/v1/projects/abc/ingest', async () => {
+      throw new IngestionFailedError('Playwright report has no "suites" array.');
+    });
+
+    app.get('/api/v1/projects/missing/ingest', async () => {
+      throw new ForeignKeyError(
+        'test_runs_project_id_fkey',
+        'Key (project_id)=(00000000-0000-0000-0000-000000000000) is not present in table "projects".',
+      );
+    });
+
+    app.get('/api/v1/ingest-other-fk', async () => {
+      throw new ForeignKeyError(
+        'test_case_results_test_run_id_fkey',
+        'Key (test_run_id)=(some-uuid) is not present in table "test_runs".',
+      );
     });
 
     app.get('/health', async () => {
@@ -95,6 +114,51 @@ describe('error-handler plugin', () => {
       const body = res.json();
       expect(body.error.code).toBe('PROJECT_NOT_FOUND');
       expect(body.error.message).toContain('abc-123');
+    });
+
+    it('maps IngestionFailedError to 422 INGESTION_FAILED with the adapter message', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/projects/abc/ingest',
+      });
+
+      expect(res.statusCode).toBe(422);
+      const body = res.json();
+      expect(body.error.code).toBe('INGESTION_FAILED');
+      expect(body.error.message).toBe('Playwright report has no "suites" array.');
+    });
+
+    it('maps ForeignKeyError(test_runs_project_id_fkey) to 404 PROJECT_NOT_FOUND with a fixed message', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/projects/missing/ingest',
+      });
+
+      expect(res.statusCode).toBe(404);
+      const body = res.json();
+      expect(body).toEqual({
+        error: { code: 'PROJECT_NOT_FOUND', message: 'Project not found' },
+      });
+      // The constraint name and SQL detail must not leak through this branch.
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toContain('test_runs_project_id_fkey');
+      expect(serialized).not.toContain('Key (project_id)');
+    });
+
+    it('falls through to 500 INTERNAL_ERROR for ForeignKeyError on other constraints without leaking the constraint name', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/ingest-other-fk',
+      });
+
+      expect(res.statusCode).toBe(500);
+      const body = res.json();
+      expect(body.error.code).toBe('INTERNAL_ERROR');
+      expect(body.error.message).toBe('Internal server error');
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toContain('test_case_results_test_run_id_fkey');
+      expect(serialized).not.toContain('Key (test_run_id)');
+      expect(serialized).not.toContain('test_runs');
     });
 
     it('maps generic errors to 500 INTERNAL_ERROR without leaking internal details', async () => {
