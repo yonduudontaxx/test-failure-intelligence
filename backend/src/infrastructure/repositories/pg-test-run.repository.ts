@@ -2,7 +2,10 @@ import type { Pool, QueryResultRow } from '../database/types.js';
 import type { TestRun, NewTestRun } from '../../domain/entities/test-run.js';
 import type { SourceType } from '../../domain/enums/source-type.js';
 import type { TestRunStatus } from '../../domain/enums/test-run-status.js';
-import type { TestRunRepository } from '../../domain/ports/test-run.repository.js';
+import type {
+  DailyFailureBucket,
+  TestRunRepository,
+} from '../../domain/ports/test-run.repository.js';
 import type { TxClient } from '../../domain/ports/tx-client.js';
 import { toDomainError } from '../database/pg-errors.js';
 
@@ -115,7 +118,13 @@ export class PgTestRunRepository implements TestRunRepository {
 
   async listByProject(
     projectId: string,
-    opts: { limit: number; offset: number; branch?: string; environment?: string },
+    opts: {
+      limit: number;
+      offset: number;
+      branch?: string;
+      environment?: string;
+      status?: TestRunStatus;
+    },
   ): Promise<{ items: TestRun[]; total: number }> {
     const where: string[] = ['project_id = $1'];
     const filterParams: unknown[] = [projectId];
@@ -128,6 +137,11 @@ export class PgTestRunRepository implements TestRunRepository {
     if (opts.environment !== undefined) {
       where.push(`environment = $${p}`);
       filterParams.push(opts.environment);
+      p += 1;
+    }
+    if (opts.status !== undefined) {
+      where.push(`status = $${p}`);
+      filterParams.push(opts.status);
       p += 1;
     }
     const whereSql = where.join(' AND ');
@@ -165,4 +179,54 @@ export class PgTestRunRepository implements TestRunRepository {
     );
     return result.rows[0] ? mapRow(result.rows[0]) : null;
   }
+
+  async countByProject(projectId: string): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM test_runs WHERE project_id = $1`,
+      [projectId],
+    );
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  async findFailureTrend(
+    projectId: string,
+    opts: { days: number; bucketSize: 'day' | 'week' },
+  ): Promise<DailyFailureBucket[]> {
+    const cutoff = new Date(Date.now() - opts.days * 86_400_000);
+    const result = await this.pool.query<FailureTrendRow>(
+      `
+      SELECT
+        TO_CHAR(
+          DATE_TRUNC($3, COALESCE(executed_at, ingested_at) AT TIME ZONE 'UTC'),
+          'YYYY-MM-DD'
+        ) AS bucket_date,
+        COUNT(*)::text AS total_runs,
+        COUNT(*) FILTER (WHERE status = 'FAILED')::text AS failed_runs
+      FROM test_runs
+      WHERE project_id = $1
+        AND COALESCE(executed_at, ingested_at) >= $2
+      GROUP BY bucket_date
+      ORDER BY bucket_date ASC
+      `,
+      [projectId, cutoff, opts.bucketSize],
+    );
+    return result.rows.map(mapTrendRow);
+  }
+}
+
+interface FailureTrendRow extends QueryResultRow {
+  bucket_date: string;
+  total_runs: string;
+  failed_runs: string;
+}
+
+function mapTrendRow(row: FailureTrendRow): DailyFailureBucket {
+  const totalRuns = parseInt(row.total_runs, 10);
+  const failedRuns = parseInt(row.failed_runs, 10);
+  return {
+    date: row.bucket_date,
+    totalRuns,
+    failedRuns,
+    passRate: totalRuns === 0 ? 1 : (totalRuns - failedRuns) / totalRuns,
+  };
 }

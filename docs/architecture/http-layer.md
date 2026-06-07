@@ -58,13 +58,22 @@ construction site for the shapes.
 | `GET` | `/api/v1/projects` | List projects (paginated) |
 | `GET` | `/api/v1/projects/:projectId` | Get a project by id |
 | `POST` | `/api/v1/projects/:projectId/ingest` | Ingest a test run (JSON body or multipart upload) — see [ingestion.md](./ingestion.md) |
+| `GET` | `/api/v1/projects/:projectId/runs` | List a project's test runs (paginated; optional `status` filter) |
+| `GET` | `/api/v1/projects/:projectId/runs/:runId` | Fetch a single test run by id |
+| `GET` | `/api/v1/projects/:projectId/runs/:runId/cases` | List the test cases in a run |
+| `GET` | `/api/v1/projects/:projectId/flaky-tests` | Distinct tests classified `FLAKY` / `BROKEN` over a window — see [analytics.md](./analytics.md) |
+| `GET` | `/api/v1/projects/:projectId/failure-trends` | Daily or weekly pass-rate buckets — see [analytics.md](./analytics.md) |
+| `GET` | `/api/v1/projects/:projectId/health` | Aggregate `HEALTHY` / `WARNING` / `CRITICAL` verdict — see [analytics.md](./analytics.md) |
+| `GET` | `/api/v1/projects/:projectId/overview` | One-call dashboard payload (counts, recent pass rate, top flaky tests, top failure patterns) |
+| `GET` | `/api/v1/projects/:projectId/failure-patterns` | List recorded failure patterns (MVP: writes deferred to Phase 2) |
 
 ## Error code reference
 
 | HTTP | `error.code` | Trigger |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Ajv schema validation failed (body, query, or params); procedural multipart-field validation in ingestion |
-| 404 | `PROJECT_NOT_FOUND` | `GET /api/v1/projects/:projectId` for an unknown id; `ForeignKeyError` on `test_runs_project_id_fkey` during ingestion |
+| 404 | `PROJECT_NOT_FOUND` | Any `/api/v1/projects/:projectId/...` route for an unknown project id; `ForeignKeyError` on `test_runs_project_id_fkey` during ingestion |
+| 404 | `RUN_NOT_FOUND` | Any `/api/v1/projects/:projectId/runs/:runId/...` route for an unknown run id (project may exist) |
 | 409 | `DUPLICATE_PROJECT_SLUG` | `UniqueConstraintError` on the `projects_slug_key` constraint |
 | 422 | `INGESTION_FAILED` | An ingestion adapter rejected the payload via `IngestionFailedError` (unknown test status, missing required structure, malformed XML or JSON file) |
 | 500 | `INTERNAL_ERROR` | Anything unhandled — full error logged via `fastify.log.error`, response carries a sanitized message |
@@ -81,10 +90,12 @@ serialization. That preserves the existing health-check response
 shape and any tooling that expects the default `{ statusCode, error,
 message }` format.
 
-The narrower 404 → `PROJECT_NOT_FOUND` mapping is gated further on
-`/api/v1/projects/`. A future Epic 5 sub-resource such as
-`/api/v1/projects/:projectId/runs` will need its own error mapping or
-must throw with a sentinel the handler keys on.
+The narrower 404 mappings are gated by path. A 404 thrown from a
+route matching `/api/v1/projects/:projectId/runs/:runId/...` becomes
+`RUN_NOT_FOUND`; any other 404 inside `/api/v1/projects/...` becomes
+`PROJECT_NOT_FOUND`. Future sub-resources need their own pattern in
+`error-handler.ts` or must throw with a sentinel the handler keys
+on.
 
 ## Schemas — `backend/src/http/schemas/<resource>.ts`
 
@@ -144,5 +155,7 @@ silently break the contract those tests describe.
   - §8 Validation strategy
   - §9 Error handling matrix
 - **Data layer below:** [data-layer.md](./data-layer.md)
+- **Ingestion pipeline:** [ingestion.md](./ingestion.md)
+- **Analytics & reliability engine:** [analytics.md](./analytics.md)
 - **Live OpenAPI spec:** Swagger UI at `/documentation` when the
   backend is running

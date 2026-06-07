@@ -12,6 +12,14 @@ import createProjectRoute from './http/routes/projects/create-project.route.js';
 import getProjectRoute from './http/routes/projects/get-project.route.js';
 import listProjectsRoute from './http/routes/projects/list-projects.route.js';
 import ingestRoute from './http/routes/projects/ingest.route.js';
+import listRunsRoute from './http/routes/projects/list-runs.route.js';
+import getRunRoute from './http/routes/projects/get-run.route.js';
+import getRunCasesRoute from './http/routes/projects/get-run-cases.route.js';
+import flakyTestsRoute from './http/routes/projects/flaky-tests.route.js';
+import failureTrendsRoute from './http/routes/projects/failure-trends.route.js';
+import projectHealthRoute from './http/routes/projects/project-health.route.js';
+import projectOverviewRoute from './http/routes/projects/project-overview.route.js';
+import failurePatternsRoute from './http/routes/projects/failure-patterns.route.js';
 
 export interface BuildAppOptions extends FastifyServerOptions {
   pool: Pool;
@@ -39,6 +47,14 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.register(getProjectRoute, { prefix: '/api/v1' });
   app.register(listProjectsRoute, { prefix: '/api/v1' });
   app.register(ingestRoute, { prefix: '/api/v1' });
+  app.register(listRunsRoute, { prefix: '/api/v1' });
+  app.register(getRunRoute, { prefix: '/api/v1' });
+  app.register(getRunCasesRoute, { prefix: '/api/v1' });
+  app.register(flakyTestsRoute, { prefix: '/api/v1' });
+  app.register(failureTrendsRoute, { prefix: '/api/v1' });
+  app.register(projectHealthRoute, { prefix: '/api/v1' });
+  app.register(projectOverviewRoute, { prefix: '/api/v1' });
+  app.register(failurePatternsRoute, { prefix: '/api/v1' });
 
   await app.ready();
   return app;
