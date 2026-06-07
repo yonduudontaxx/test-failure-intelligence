@@ -135,4 +135,41 @@ describe('GET /api/v1/projects/:projectId/health (integration)', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('VALIDATION_ERROR');
   });
+
+  describe('warnings and critical issues', () => {
+    it('returns empty warnings and criticalIssues for a healthy project', async () => {
+      await seedExecution('a', 'PASSED');
+      await seedExecution('b', 'PASSED');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/health`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.warnings).toEqual([]);
+      expect(body.data.criticalIssues).toEqual([]);
+    });
+
+    it('emits BROKEN_TESTS_PRESENT warning when a test is BROKEN', async () => {
+      // Same test failing three times across runs → BROKEN
+      const broken = 'broken-test';
+      await seedExecution(broken, 'FAILED');
+      await seedExecution(broken, 'FAILED');
+      await seedExecution(broken, 'FAILED');
+      // and one passing test so totalRuns > 0 path is exercised
+      await seedExecution('healthy', 'PASSED');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/health`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const warningCodes = body.data.warnings.map((w: { code: string }) => w.code);
+      expect(warningCodes).toContain('BROKEN_TESTS_PRESENT');
+    });
+  });
 });

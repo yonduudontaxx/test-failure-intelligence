@@ -50,6 +50,7 @@ export default async function projectHealthRoute(fastify: FastifyInstance): Prom
         request.server.repos.projects,
         request.server.repos.testRuns,
         request.server.repos.testCases,
+        request.server.repos.failurePatterns,
         { projectId: request.params.projectId, days },
       );
       return reply.code(200).send(success(result));
