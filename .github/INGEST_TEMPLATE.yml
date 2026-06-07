@@ -8,11 +8,21 @@
 # Required GitHub Actions variables
 # (Settings → Secrets and variables → Actions → Variables):
 #
-#   TFI_API_URL    — base URL of the backend (e.g. https://tfi.example.com)
-#   TFI_PROJECT_ID — UUID of the project in TFI (visible in the projects list)
+#   TFI_API_URL       — base URL of the backend (e.g. https://tfi.example.com)
+#   TFI_DASHBOARD_URL — base URL of the dashboard (e.g. https://tfi-dashboard.example.com)
+#   TFI_PROJECT_ID    — UUID of the project in TFI (visible in the projects list)
 #
 # Ingestion endpoint:
 #   POST $TFI_API_URL/api/v1/projects/$TFI_PROJECT_ID/ingest
+#
+# Dashboard deep link:
+#   The ingest response includes { "data": { "runId": "...", "testCaseCount": N } }.
+#   We parse runId with jq (pre-installed on GitHub-hosted ubuntu-latest
+#   runners — no install step required) and emit a clickable link to
+#   $GITHUB_STEP_SUMMARY pointing at:
+#     $TFI_DASHBOARD_URL/projects/$TFI_PROJECT_ID/runs/<runId>
+#   The link renders at the top of the GitHub Actions run page so reviewers
+#   can jump straight to the dashboard from CI.
 #
 # Supported formats:
 #   - jest         Jest JSON          (multipart, format=jest)
@@ -63,10 +73,12 @@ jobs:
 
       # ── Ingest into TFI ─────────────────────────────────────────────────
       # if: always() — see header for why this matters.
+      # Captures the response, parses runId with jq, and writes a dashboard
+      # deep-link to the GitHub Actions job summary.
       - name: Ingest test results
         if: always()
         run: |
-          curl --fail-with-body -X POST \
+          response=$(curl --fail-with-body -sS -X POST \
             "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
             -F "file=@jest-results.json" \
             -F "format=jest" \
@@ -75,11 +87,19 @@ jobs:
             -F "environment=ci" \
             -F "pipelineName=${{ github.workflow }}" \
             -F "buildNumber=${{ github.run_number }}" \
-            -F "externalId=${{ github.run_id }}"
+            -F "externalId=${{ github.run_id }}")
+          run_id=$(echo "$response" | jq -r '.data.runId')
+          url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+          {
+            echo "### Test Failure Intelligence"
+            echo ""
+            echo "[View run dashboard]($url)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Alternative formats — replace the two steps above with the block matching
-# your test runner.
+# your test runner. Each block uses the same response-capture + summary
+# pattern so the dashboard deep-link works regardless of format.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Playwright JSON ─────────────────────────────────────────────────────────
@@ -95,7 +115,7 @@ jobs:
 #   - name: Ingest test results
 #     if: always()
 #     run: |
-#       curl --fail-with-body -X POST \
+#       response=$(curl --fail-with-body -sS -X POST \
 #         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
 #         -F "file=@playwright-results.json" \
 #         -F "format=playwright" \
@@ -104,7 +124,14 @@ jobs:
 #         -F "environment=ci" \
 #         -F "pipelineName=${{ github.workflow }}" \
 #         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}"
+#         -F "externalId=${{ github.run_id }}")
+#       run_id=$(echo "$response" | jq -r '.data.runId')
+#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#       {
+#         echo "### Test Failure Intelligence"
+#         echo ""
+#         echo "[View run dashboard]($url)"
+#       } >> "$GITHUB_STEP_SUMMARY"
 
 # ─── JUnit XML ───────────────────────────────────────────────────────────────
 # Use as the universal interchange format. Most test runners can emit JUnit
@@ -122,7 +149,7 @@ jobs:
 #   - name: Ingest test results
 #     if: always()
 #     run: |
-#       curl --fail-with-body -X POST \
+#       response=$(curl --fail-with-body -sS -X POST \
 #         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
 #         -F "file=@junit.xml" \
 #         -F "format=junit-xml" \
@@ -131,7 +158,14 @@ jobs:
 #         -F "environment=ci" \
 #         -F "pipelineName=${{ github.workflow }}" \
 #         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}"
+#         -F "externalId=${{ github.run_id }}")
+#       run_id=$(echo "$response" | jq -r '.data.runId')
+#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#       {
+#         echo "### Test Failure Intelligence"
+#         echo ""
+#         echo "[View run dashboard]($url)"
+#       } >> "$GITHUB_STEP_SUMMARY"
 
 # ─── Canonical API JSON (application/json body) ──────────────────────────────
 # Use when you build the canonical TFI JSON yourself — for example, from a
@@ -165,10 +199,17 @@ jobs:
 #   - name: Ingest test results (canonical JSON body)
 #     if: always()
 #     run: |
-#       curl --fail-with-body -X POST \
+#       response=$(curl --fail-with-body -sS -X POST \
 #         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
 #         -H "Content-Type: application/json" \
-#         --data-binary @canonical-results.json
+#         --data-binary @canonical-results.json)
+#       run_id=$(echo "$response" | jq -r '.data.runId')
+#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#       {
+#         echo "### Test Failure Intelligence"
+#         echo ""
+#         echo "[View run dashboard]($url)"
+#       } >> "$GITHUB_STEP_SUMMARY"
 
 # ─── Generic JSON (multipart file upload of canonical JSON) ──────────────────
 # Use when you have a canonical-shape JSON file as a CI artifact and want to
@@ -180,7 +221,7 @@ jobs:
 #   - name: Ingest test results
 #     if: always()
 #     run: |
-#       curl --fail-with-body -X POST \
+#       response=$(curl --fail-with-body -sS -X POST \
 #         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
 #         -F "file=@results.json" \
 #         -F "format=json" \
@@ -189,4 +230,11 @@ jobs:
 #         -F "environment=ci" \
 #         -F "pipelineName=${{ github.workflow }}" \
 #         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}"
+#         -F "externalId=${{ github.run_id }}")
+#       run_id=$(echo "$response" | jq -r '.data.runId')
+#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#       {
+#         echo "### Test Failure Intelligence"
+#         echo ""
+#         echo "[View run dashboard]($url)"
+#       } >> "$GITHUB_STEP_SUMMARY"
