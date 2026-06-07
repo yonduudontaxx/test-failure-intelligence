@@ -1,0 +1,192 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Test Failure Intelligence — CI Ingestion Template
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This file is a REFERENCE template, not an active workflow. To use it,
+# copy the relevant block into your project's .github/workflows/<name>.yml.
+#
+# Required GitHub Actions variables
+# (Settings → Secrets and variables → Actions → Variables):
+#
+#   TFI_API_URL    — base URL of the backend (e.g. https://tfi.example.com)
+#   TFI_PROJECT_ID — UUID of the project in TFI (visible in the projects list)
+#
+# Ingestion endpoint:
+#   POST $TFI_API_URL/api/v1/projects/$TFI_PROJECT_ID/ingest
+#
+# Supported formats:
+#   - jest         Jest JSON          (multipart, format=jest)
+#   - playwright   Playwright JSON    (multipart, format=playwright)
+#   - junit-xml    JUnit XML          (multipart, format=junit-xml)
+#   - json         Generic canonical  (multipart, format=json — file upload)
+#   - api          Canonical JSON     (application/json body — inline JSON)
+#
+# Override fields available on every ingestion (all optional):
+#   branch, commitSha, environment, pipelineName, buildNumber, externalId
+#
+# The multipart paths accept overrides as form fields (`-F branch=…`).
+# The application/json path expects overrides inside the body's testRun
+# object — overrides are not honored as separate fields on that path.
+#
+# Why `if: always()`?
+#   GitHub Actions skips remaining steps when one fails. The ingest step
+#   must run even when tests fail — failure is precisely when we want the
+#   data in TFI. `if: always()` opts out of the default success() condition.
+#   The job's final status still reflects the test outcome; this only
+#   ensures ingestion happens regardless.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      # ── Run your tests ──────────────────────────────────────────────────
+      # Jest example — produces jest-results.json
+      - name: Run tests
+        run: npx jest --json --outputFile=jest-results.json
+
+      # ── Ingest into TFI ─────────────────────────────────────────────────
+      # if: always() — see header for why this matters.
+      - name: Ingest test results
+        if: always()
+        run: |
+          curl --fail-with-body -X POST \
+            "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+            -F "file=@jest-results.json" \
+            -F "format=jest" \
+            -F "branch=${{ github.ref_name }}" \
+            -F "commitSha=${{ github.sha }}" \
+            -F "environment=ci" \
+            -F "pipelineName=${{ github.workflow }}" \
+            -F "buildNumber=${{ github.run_number }}" \
+            -F "externalId=${{ github.run_id }}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Alternative formats — replace the two steps above with the block matching
+# your test runner.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Playwright JSON ─────────────────────────────────────────────────────────
+# Use when running Playwright. Configure your playwright.config.ts:
+#
+#   export default defineConfig({
+#     reporter: [['json', { outputFile: 'playwright-results.json' }]],
+#   });
+#
+#   - name: Run Playwright tests
+#     run: npx playwright test
+#
+#   - name: Ingest test results
+#     if: always()
+#     run: |
+#       curl --fail-with-body -X POST \
+#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         -F "file=@playwright-results.json" \
+#         -F "format=playwright" \
+#         -F "branch=${{ github.ref_name }}" \
+#         -F "commitSha=${{ github.sha }}" \
+#         -F "environment=ci" \
+#         -F "pipelineName=${{ github.workflow }}" \
+#         -F "buildNumber=${{ github.run_number }}" \
+#         -F "externalId=${{ github.run_id }}"
+
+# ─── JUnit XML ───────────────────────────────────────────────────────────────
+# Use as the universal interchange format. Most test runners can emit JUnit
+# XML, which makes this the right choice when no first-class adapter exists.
+#
+#   Jest:    add jest-junit reporter, set JEST_JUNIT_OUTPUT_FILE=junit.xml
+#   Pytest:  pytest --junit-xml=junit.xml
+#   Mocha:   npx mocha --reporter mocha-junit-reporter --reporter-options mochaFile=junit.xml
+#   Go:      go test -v ./... | go-junit-report > junit.xml
+#   Maven:   surefire writes target/surefire-reports/*.xml
+#
+#   - name: Run tests
+#     run: <your runner with JUnit XML output>
+#
+#   - name: Ingest test results
+#     if: always()
+#     run: |
+#       curl --fail-with-body -X POST \
+#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         -F "file=@junit.xml" \
+#         -F "format=junit-xml" \
+#         -F "branch=${{ github.ref_name }}" \
+#         -F "commitSha=${{ github.sha }}" \
+#         -F "environment=ci" \
+#         -F "pipelineName=${{ github.workflow }}" \
+#         -F "buildNumber=${{ github.run_number }}" \
+#         -F "externalId=${{ github.run_id }}"
+
+# ─── Canonical API JSON (application/json body) ──────────────────────────────
+# Use when you build the canonical TFI JSON yourself — for example, from a
+# script that aggregates multiple test runs or transforms a non-standard
+# runner's output. The body is inline JSON, not a file upload; override
+# fields live inside the testRun object (they aren't separate form fields
+# on this path).
+#
+# Canonical shape:
+#   {
+#     "sourceType": "api",
+#     "testRun": {
+#       "branch": "main",
+#       "environment": "ci",
+#       "commitSha": "abc1234",
+#       "pipelineName": "CI",
+#       "buildNumber": "245",
+#       "externalId": "ci-run-9876",
+#       "executedAt": "2026-06-07T12:00:00Z"
+#     },
+#     "testCases": [
+#       { "testName": "passes the check", "status": "PASSED", "durationMs": 12 },
+#       {
+#         "testName": "fails on null", "status": "FAILED",
+#         "failureMessage": "Cannot read property of null",
+#         "failureType": "TypeError"
+#       }
+#     ]
+#   }
+#
+#   - name: Ingest test results (canonical JSON body)
+#     if: always()
+#     run: |
+#       curl --fail-with-body -X POST \
+#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         -H "Content-Type: application/json" \
+#         --data-binary @canonical-results.json
+
+# ─── Generic JSON (multipart file upload of canonical JSON) ──────────────────
+# Use when you have a canonical-shape JSON file as a CI artifact and want to
+# upload it as-is. Functionally equivalent to the application/json body path
+# above, but lets you use the same multipart override fields the other
+# formats use — the form fields beat the corresponding fields inside the
+# file's testRun block.
+#
+#   - name: Ingest test results
+#     if: always()
+#     run: |
+#       curl --fail-with-body -X POST \
+#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         -F "file=@results.json" \
+#         -F "format=json" \
+#         -F "branch=${{ github.ref_name }}" \
+#         -F "commitSha=${{ github.sha }}" \
+#         -F "environment=ci" \
+#         -F "pipelineName=${{ github.workflow }}" \
+#         -F "buildNumber=${{ github.run_number }}" \
+#         -F "externalId=${{ github.run_id }}"
