@@ -1,7 +1,10 @@
 import type { Pool, QueryResultRow } from '../database/types.js';
 import type { TestCaseResult, NewTestCaseResult } from '../../domain/entities/test-case-result.js';
 import type { TestCaseStatus } from '../../domain/enums/test-case-status.js';
-import type { TestCaseRepository } from '../../domain/ports/test-case.repository.js';
+import type {
+  ReliabilitySummary,
+  TestCaseRepository,
+} from '../../domain/ports/test-case.repository.js';
 import type { TxClient } from '../../domain/ports/tx-client.js';
 import { toDomainError } from '../database/pg-errors.js';
 
@@ -128,4 +131,88 @@ export class PgTestCaseRepository implements TestCaseRepository {
       .map((c) => `${prefix}.${c}`)
       .join(', ');
   }
+
+  async countByProject(projectId: string): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM test_case_results WHERE project_id = $1`,
+      [projectId],
+    );
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  async countByStatus(projectId: string, status: TestCaseStatus): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM test_case_results
+        WHERE project_id = $1 AND status = $2`,
+      [projectId, status],
+    );
+    return parseInt(result.rows[0].count, 10);
+  }
+
+  async computeReliabilitySummaries(
+    projectId: string,
+    window: { days: number },
+  ): Promise<ReliabilitySummary[]> {
+    const cutoff = new Date(Date.now() - window.days * 86_400_000);
+    const result = await this.pool.query<ReliabilitySummaryRow>(
+      `
+      WITH windowed AS (
+        SELECT
+          tcr.full_name,
+          tcr.suite_name,
+          tcr.test_name,
+          tcr.status,
+          tr.executed_at,
+          tr.ingested_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY tcr.full_name
+            ORDER BY tr.executed_at DESC NULLS LAST, tr.ingested_at DESC, tcr.id DESC
+          ) AS rn
+        FROM test_case_results tcr
+        JOIN test_runs tr ON tr.id = tcr.test_run_id
+        WHERE tcr.project_id = $1
+          AND COALESCE(tr.executed_at, tr.ingested_at) >= $2
+      )
+      SELECT
+        full_name,
+        MAX(suite_name) AS suite_name,
+        MAX(test_name) AS test_name,
+        COUNT(*) FILTER (WHERE status = 'PASSED')::text          AS pass_count,
+        COUNT(*) FILTER (WHERE status IN ('FAILED','ERROR'))::text AS fail_count,
+        COUNT(*) FILTER (WHERE status = 'SKIPPED')::text         AS skipped_count,
+        (ARRAY_AGG(status     ORDER BY rn ASC))[1] AS last_status,
+        (ARRAY_AGG(executed_at ORDER BY rn ASC))[1] AS last_executed_at
+      FROM windowed
+      GROUP BY full_name
+      ORDER BY full_name ASC
+      `,
+      [projectId, cutoff],
+    );
+    return result.rows.map(mapSummaryRow);
+  }
+}
+
+interface ReliabilitySummaryRow extends QueryResultRow {
+  full_name: string;
+  suite_name: string | null;
+  test_name: string;
+  pass_count: string;
+  fail_count: string;
+  skipped_count: string;
+  last_status: TestCaseStatus;
+  last_executed_at: Date | null;
+}
+
+function mapSummaryRow(row: ReliabilitySummaryRow): ReliabilitySummary {
+  return {
+    fullName: row.full_name,
+    suiteName: row.suite_name ?? undefined,
+    testName: row.test_name,
+    passCount: parseInt(row.pass_count, 10),
+    failCount: parseInt(row.fail_count, 10),
+    skippedCount: parseInt(row.skipped_count, 10),
+    lastStatus: row.last_status,
+    lastExecutedAt: row.last_executed_at ?? undefined,
+  };
 }

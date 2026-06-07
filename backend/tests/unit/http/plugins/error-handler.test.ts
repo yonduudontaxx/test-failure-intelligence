@@ -54,6 +54,10 @@ describe('error-handler plugin', () => {
       );
     });
 
+    app.get('/api/v1/projects/p1/runs/r-missing', async () => {
+      throw app.httpErrors.notFound('Run not found');
+    });
+
     app.get('/api/v1/ingest-other-fk', async () => {
       throw new ForeignKeyError(
         'test_case_results_test_run_id_fkey',
@@ -114,6 +118,18 @@ describe('error-handler plugin', () => {
       const body = res.json();
       expect(body.error.code).toBe('PROJECT_NOT_FOUND');
       expect(body.error.message).toContain('abc-123');
+    });
+
+    it('maps 404 on /api/v1/projects/*/runs/* to 404 RUN_NOT_FOUND (more specific than the projects branch)', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/projects/p1/runs/r-missing',
+      });
+
+      expect(res.statusCode).toBe(404);
+      const body = res.json();
+      expect(body.error.code).toBe('RUN_NOT_FOUND');
+      expect(body.error.message).toBe('Run not found');
     });
 
     it('maps IngestionFailedError to 422 INGESTION_FAILED with the adapter message', async () => {
