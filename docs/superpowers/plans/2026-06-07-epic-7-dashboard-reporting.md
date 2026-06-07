@@ -39,7 +39,7 @@ The two load-bearing decisions:
 - Shared root layout (`app/layout.tsx`) and project-scoped layout (`app/projects/[projectId]/layout.tsx`) with a sticky tab nav (Overview · Runs · Reliability · Trends · Patterns)
 - Typed API client in `frontend/src/lib/api/` — one module per resource (`projects.ts`, `runs.ts`, `analytics.ts`, etc.), each exporting strongly-typed fetch functions that unwrap the `{ data }` envelope and throw `ApiError` on `{ error }` responses
 - TypeScript response types mirroring `backend/src/http/schemas/` shapes — hand-written for MVP (one source of truth per file in `frontend/src/lib/api/types/`); no codegen
-- Styling via **Tailwind CSS** (latest stable v4-line). Picked because it's the Next.js default and avoids a custom design-tokens module for MVP. Per-component class strings; no `@apply` ladders, no styled-components, no CSS modules.
+- Styling via **Tailwind CSS v3** (latest 3.x). Picked because it's well-trodden with Next.js and avoids a custom design-tokens module for MVP. Per-component class strings; no `@apply` ladders, no styled-components, no CSS modules.
 - Chart visualization via **Recharts** for the failure-trends page (`<BarChart>` or `<LineChart>` with `<Tooltip>`). Recharts is declarative, tree-shakes well, and is the standard pick for React dashboards.
 - Per-route `loading.tsx` and `error.tsx` boundaries so every page has a real loading skeleton and a real error UI (no white screen on a backend hiccup)
 - Vitest + React Testing Library smoke tests at one test per page (`renders without crashing` against a stubbed fetch). Component-by-component test depth deferred to a later epic.
@@ -321,7 +321,7 @@ Every function returns the already-unwrapped data — pages never see the envelo
 
 ## 6. Styling and theme
 
-**Tailwind CSS v4** via the official Next.js setup (`@tailwindcss/postcss` plugin + `@import "tailwindcss"` in `app/globals.css`).
+**Tailwind CSS v3** via the standard Next.js setup: `tailwind.config.ts` with the `content` glob pointing at `app/**/*.{ts,tsx}` and `components/**/*.{ts,tsx}`; `postcss.config.mjs` declaring `tailwindcss` and `autoprefixer`; `app/globals.css` carrying the three `@tailwind` directives.
 
 **Palette:** semantic colour roles, mapped to Tailwind defaults:
 
@@ -405,11 +405,18 @@ Each task = one logical commit. Setup tasks first (1–4), then per-page (5–11
 
 ### Task 1 — Tailwind + global styles + shared layout
 
-- Install: `tailwindcss@latest`, `@tailwindcss/postcss`, `postcss` as dev deps. Add `postcss.config.mjs` with `'@tailwindcss/postcss': {}`.
-- Create `frontend/src/app/globals.css` with `@import "tailwindcss";` and a few base resets if needed.
+- Install dev deps: `tailwindcss@^3`, `postcss`, `autoprefixer`. Confirm `tailwindcss` resolves to a 3.x line (not 4.x).
+- Create `frontend/tailwind.config.ts` with `content: ['./src/app/**/*.{ts,tsx}', './src/components/**/*.{ts,tsx}']`, default theme.
+- Create `frontend/postcss.config.mjs` exporting `{ plugins: { tailwindcss: {}, autoprefixer: {} } }`.
+- Create `frontend/src/app/globals.css` with the three v3 directives:
+  ```css
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+  ```
 - Update `frontend/src/app/layout.tsx` to import `./globals.css` and apply `className="min-h-screen bg-gray-50 text-gray-900"` to `<body>`.
 - Create `frontend/src/components/layout/AppHeader.tsx` — a sticky top bar with the app title and a link back to `/`. Render it inside `layout.tsx` above the page content.
-- Verify: `npm run dev`, navigate to `/`, see styled header above the placeholder page.
+- Verify: `npm run dev`, navigate to `/`, see styled header above the placeholder page; `npm run build` succeeds.
 - Commit: `feat(frontend): add Tailwind setup and shared app layout`
 
 ### Task 2 — API client types and base fetch helpers
@@ -561,7 +568,6 @@ The epic is complete when all of the following hold simultaneously on `develop`:
 
 | Risk | Mitigation |
 |---|---|
-| Tailwind v4 + Next.js 16 has a sharp edge that bites mid-implementation | Task 1 installs and verifies before any page work. If the latest stable Tailwind shows up broken with this Next version, fall back to Tailwind v3 stable. |
 | Recharts SSR / hydration mismatch (charts only render in the browser) | Wrap the chart component in `'use client'` and let it suspend during SSR. The page is still SSR'd; the chart hydrates in the browser. Verified-by-design pattern. |
 | `cache: 'no-store'` makes the dashboard slow because every nav re-fetches | Each backend endpoint already returns in <100 ms on realistic volumes (Epic 5 perf). If perf becomes an issue, add `next: { revalidate: 30 }` per call site without changing types. |
 | Hand-written response types drift from backend schemas | The task includes a sentence-level audit of each response shape against the backend's `analytics.ts`/`ingest.ts`/`test-run.ts`. Future epic can add Zod or `openapi-typescript` codegen; not blocking MVP. |
