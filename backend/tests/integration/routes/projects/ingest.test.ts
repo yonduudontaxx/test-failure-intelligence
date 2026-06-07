@@ -346,4 +346,96 @@ describe('POST /api/v1/projects/:projectId/ingest (integration)', () => {
       expect(res.json().error.code).toBe('INGESTION_FAILED');
     });
   });
+
+  describe('failure pattern extraction', () => {
+    async function countPatterns(): Promise<number> {
+      const { rows } = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      return parseInt(rows[0].count, 10);
+    }
+
+    it('persists one failure_patterns row per distinct failure on a FAILED ingestion', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 't1',
+              status: 'FAILED',
+              failureMessage: 'TimeoutError: navigation timeout exceeded',
+              failureType: 'TimeoutError',
+            },
+            {
+              testName: 't2',
+              status: 'FAILED',
+              failureMessage: 'AssertionError: expected 1 to equal 2',
+              failureType: 'AssertionError',
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(await countPatterns()).toBe(2);
+    });
+
+    it('persists no failure_patterns rows when every case PASSED', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            { testName: 'a', status: 'PASSED' },
+            { testName: 'b', status: 'PASSED' },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(await countPatterns()).toBe(0);
+    });
+
+    it('increments occurrence_count on a second ingestion with the same failure', async () => {
+      const payload = {
+        sourceType: 'api',
+        testRun: {},
+        testCases: [
+          {
+            testName: 't',
+            status: 'FAILED' as const,
+            failureMessage: 'fetch failed',
+            failureType: 'TypeError',
+          },
+        ],
+      };
+
+      const first = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload,
+      });
+      expect(first.statusCode).toBe(201);
+
+      const second = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload,
+      });
+      expect(second.statusCode).toBe(201);
+
+      const { rows } = await pool.query<{ pattern: string; occurrence_count: number }>(
+        `SELECT pattern, occurrence_count FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].occurrence_count).toBe(2);
+    });
+  });
 });
