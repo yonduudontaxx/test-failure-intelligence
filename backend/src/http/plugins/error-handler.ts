@@ -6,6 +6,7 @@ import { IngestionFailedError } from '../../application/ingestion/errors.js';
 
 const API_PREFIX = '/api/v1';
 const PROJECTS_PREFIX = '/api/v1/projects';
+const RUNS_SUBPATH_RE = /\/api\/v1\/projects\/[^/]+\/runs\//;
 
 export default fp(
   async (fastify) => {
@@ -33,6 +34,11 @@ export default fp(
 
       if (err instanceof ForeignKeyError && err.constraint === 'test_runs_project_id_fkey') {
         reply.code(404).send(failure('PROJECT_NOT_FOUND', 'Project not found'));
+        return;
+      }
+
+      if (err.statusCode === 404 && RUNS_SUBPATH_RE.test(request.url)) {
+        reply.code(404).send(failure('RUN_NOT_FOUND', err.message));
         return;
       }
 
