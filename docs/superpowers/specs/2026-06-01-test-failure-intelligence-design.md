@@ -257,7 +257,7 @@ if mix of PASSED + FAILED/ERROR      → FLAKY
 | `HIGH` | Widespread failure across multiple suites or environments |
 | `CRITICAL` | Blocking failures affecting core functionality |
 
-Severity on `FailurePattern` defaults to `LOW` on creation and can be updated manually (Phase 2: heuristic-based assignment).
+Severity on `FailurePattern` is assigned by `SeverityAssigner` (Epic 6) at upsert time. Thresholds (stale check first; then occurrence count + category): stale (>30 days since `last_seen_at`) → `LOW`; `occurrenceCount ≥ 50` → `CRITICAL`; `occurrenceCount ≥ 25` with category in `{timeout, network, database}` → `CRITICAL`; `occurrenceCount ≥ 20` → `HIGH`; `occurrenceCount ≥ 5` → `MEDIUM`; otherwise `LOW`. See `docs/architecture/analytics.md` and the Epic 6 plan.
 
 ### ProjectHealthStatus
 
@@ -901,7 +901,29 @@ Returns tests with `reliabilityState` of `FLAKY` or `BROKEN` by default. Use `?s
 
 ---
 
-### Epic 6: Frontend Dashboard
+### Epic 6: Health Scoring and Failure Intelligence
+
+> **Scope change (2026-06-07):** Epic 6 was originally "Frontend
+> Dashboard". The frontend epic moved to a later position so the
+> failure-pattern clustering work — originally listed under §10
+> Phase 2 — could be pulled forward and ship in MVP. The frontend
+> dashboard scope below is preserved verbatim, but lands as a later
+> epic (TBD numbering) rather than Epic 6. See
+> `docs/superpowers/plans/2026-06-07-epic-6-health-scoring-failure-intelligence.md`.
+
+**Story: Failure pattern extraction**
+- Task: `PatternExtractor` domain service (canonical pattern + category from `failureMessage` / `failureType` / `testName`)
+- Task: `SeverityAssigner` domain service (heuristic severity from `occurrenceCount`, `category`, `lastSeenAt`)
+- Task: `IssueDetector` domain service (eight warning / critical issue codes, shared thresholds with `HealthEvaluator`)
+- Task: `FailurePatternRepository.upsertByPattern` (atomic `INSERT … ON CONFLICT` with optional `TxClient`)
+- Task: `extractFailurePatterns` use case (filter, dedup-within-batch, severity, upsert)
+- Task: Integrate `extractFailurePatterns` into `ingestTestRun` (same `withTransaction` block, full atomicity)
+- Task: Extend `/health` response with `warnings` and `criticalIssues` arrays
+- Task: Extend `/overview` response with `topCriticalIssues` (top 3) and real `topFailurePatterns`
+- Task: End-to-end integration fixtures verifying ingest → patterns → analytics
+- Task: Documentation pass (`analytics.md`, `ingestion.md`, `tech-debt.md`, this spec, README)
+
+### Frontend Dashboard (was Epic 6 — moved to a later epic)
 
 **Story: Projects list page**
 - Task: Project cards grid with health status badge
@@ -960,7 +982,7 @@ Epics 1–7 above.
 - Test case drill-down: full execution history per test
 - Advanced filtering: branch, environment, date range dropdowns
 - Trend comparison: current period vs previous period
-- Failure pattern clustering (basic text similarity / grouping)
+- Failure pattern clustering — *graduated to MVP via Epic 6 (regex-based canonicalisation + heuristic severity); statistical/text-similarity clustering remains Phase 2*
 - Reporter CLI (Node.js) for easy CI integration
 - GitHub Actions integration package (`@test-failure-intelligence/action`)
 - Flakiness score data collection (groundwork for Phase 3 statistical model)

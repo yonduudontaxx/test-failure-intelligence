@@ -19,9 +19,12 @@ ingestTestRun use case (backend/src/application/use-cases/ingest-test-run.ts)
    │  adapter.parse(raw) → ParsedTestRun (fragments only)
    │  derives status / totalTests / passedTests / failedTests / skippedTests
    │  merges input.overrides on top of parsed run fields
-   │  withTransaction → runRepo.create(..., tx); caseRepo.createMany(..., tx)
+   │  withTransaction →
+   │    runRepo.create(..., tx)
+   │    caseRepo.createMany(..., tx)
+   │    extractFailurePatterns(patternRepo, cases, projectId, tx)
    ▼
-TestRun + TestCaseResult rows in PostgreSQL
+TestRun + TestCaseResult + FailurePattern rows in PostgreSQL
 ```
 
 See [http-layer.md](./http-layer.md) for the envelope and error handler
@@ -103,11 +106,44 @@ fields **beat** parsed file values; nothing can override `projectId`,
 
 ## Atomicity
 
-Both repo calls run inside one `withTransaction(pool, ...)` and
-receive the same `PoolClient`. If either fails, both roll back — a
-failed case insert never leaves a partial run behind. Epic 5 can
-assume "if a `test_runs` row exists, all of its `test_case_results`
-also exist".
+All three repo calls run inside one `withTransaction(pool, ...)` and
+receive the same `PoolClient`. If any one fails — run insert, case
+insert, or pattern upsert — every change rolls back. A failed pattern
+upsert leaves no run and no cases behind. Epic 5 + Epic 6 can assume
+"if a `test_runs` row exists, all of its `test_case_results` exist
+**and** every pattern row it contributed to is accounted for."
+
+The tradeoff: a pattern-extraction bug surfaces as a 500 on
+ingestion, and the CI client must re-upload. Accepted because a
+half-written run with no patterns leaves the analytics endpoints in
+an inconsistent state that's harder to detect than a hard failure.
+
+## Failure pattern extraction
+
+After `caseRepo.createMany`, `extractFailurePatterns(patternRepo,
+cases, projectId, tx)` runs over the parsed `ParsedTestCase[]`:
+
+1. **Filter.** Only `status ∈ {FAILED, ERROR}` cases with at least
+   one of `failureMessage` / `failureType` non-empty after trim
+   contribute a pattern. PASSED, SKIPPED, and signal-less FAILED
+   cases are ignored.
+2. **Extract.** Each qualifying case feeds `extractPattern(msg,
+   type, testName)` → `{ pattern, category }`. See
+   [analytics.md](./analytics.md#extractpatternfailuremessage-failuretype-testname)
+   for the scrub rules and category taxonomy.
+3. **Dedup within batch.** Cases sharing the same canonical pattern
+   collapse to one upsert with `occurrenceCount = N` — a single run
+   that hits the same defect across three tests bumps the row by 1,
+   not 3.
+4. **Assign severity.** `assignSeverity({ occurrenceCount: batchN,
+   category, lastSeenAt: now, now })` per distinct pattern. Severity
+   reflects the batch only (see
+   [analytics.md](./analytics.md#pattern-persistence) for the
+   tradeoff).
+5. **Upsert.** `patternRepo.upsertByPattern(...)` with the shared
+   `tx`. Atomic `INSERT … ON CONFLICT (project_id, pattern) DO
+   UPDATE` increments `occurrence_count`, advances `last_seen_at` via
+   `GREATEST`, and sets `severity` to the batch-derived value.
 
 ## Idempotency
 

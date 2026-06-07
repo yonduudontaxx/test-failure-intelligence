@@ -175,9 +175,9 @@ Swagger UI is available at `http://localhost:3001/documentation` when the backen
 | `GET` | `/api/v1/projects/:projectId/runs/:runId/cases` | List the test cases in a run (full case payloads, ordered by id) |
 | `GET` | `/api/v1/projects/:projectId/flaky-tests` | Distinct tests classified `FLAKY` or `BROKEN` over a window; supports `?days=` (1–90, default 30) and `?limit=` (1–100, default 20) |
 | `GET` | `/api/v1/projects/:projectId/failure-trends` | Daily or weekly pass-rate buckets; supports `?days=` (1–90, default 30) and `?bucketSize=day\|week` |
-| `GET` | `/api/v1/projects/:projectId/health` | Aggregate `HEALTHY` / `WARNING` / `CRITICAL` verdict with pass and failure rates; supports `?days=` (1–90, default 30) |
-| `GET` | `/api/v1/projects/:projectId/overview` | One-call dashboard payload: counts, recent pass rate, health status, top flaky tests, top failure patterns |
-| `GET` | `/api/v1/projects/:projectId/failure-patterns` | List recorded failure patterns ordered by occurrence count; supports `?limit=` (1–100, default 50). MVP: writes are deferred to Phase 2, so this list is empty until pattern extraction lands |
+| `GET` | `/api/v1/projects/:projectId/health` | Aggregate `HEALTHY` / `WARNING` / `CRITICAL` verdict with pass/failure rates, plus `warnings` and `criticalIssues` arrays explaining the verdict; supports `?days=` (1–90, default 30) |
+| `GET` | `/api/v1/projects/:projectId/overview` | One-call dashboard payload: counts, recent pass rate, health status, top flaky tests, top failure patterns, top critical issues |
+| `GET` | `/api/v1/projects/:projectId/failure-patterns` | List recorded failure patterns ordered by occurrence count; supports `?limit=` (1–100, default 50). Patterns are extracted during ingestion (FAILED/ERROR cases with `failureMessage` or `failureType`) with heuristic severity assignment |
 
 All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions and the error-code table, [docs/architecture/ingestion.md](docs/architecture/ingestion.md) for the ingestion adapter contract and supported source types, and [docs/architecture/analytics.md](docs/architecture/analytics.md) for the reliability classifier, health-evaluator thresholds, and aggregated SQL approach behind the analytics endpoints.
 
