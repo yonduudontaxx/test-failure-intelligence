@@ -144,6 +144,7 @@ export default async function ingestRoute(fastify: FastifyInstance): Promise<voi
           request.server.pool,
           request.server.repos.testRuns,
           request.server.repos.testCases,
+          request.server.repos.failurePatterns,
           adapter,
           {
             projectId: request.params.projectId,
@@ -166,6 +167,7 @@ export default async function ingestRoute(fastify: FastifyInstance): Promise<voi
         request.server.pool,
         request.server.repos.testRuns,
         request.server.repos.testCases,
+        request.server.repos.failurePatterns,
         adapter,
         {
           projectId: request.params.projectId,

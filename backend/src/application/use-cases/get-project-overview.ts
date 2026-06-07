@@ -10,6 +10,7 @@ import type {
 import type { FailurePatternRepository } from '../../domain/ports/failure-pattern.repository.js';
 import { classifyReliability } from '../../domain/services/reliability-classifier.js';
 import { evaluateHealth } from '../../domain/services/health-evaluator.js';
+import { detectIssues, type FailurePatternSummary } from '../../domain/services/issue-detector.js';
 import type {
   FlakyTestItem,
   OverviewResponse,
@@ -19,6 +20,8 @@ import type {
 const DEFAULT_DAYS = 30;
 const TOP_FLAKY_LIMIT = 5;
 const TOP_PATTERNS_LIMIT = 5;
+const TOP_CRITICAL_ISSUES_LIMIT = 3;
+const PATTERN_INSPECTION_LIMIT = 50;
 
 function synthesizeStatuses(summary: ReliabilitySummary): TestCaseStatus[] {
   const arr: TestCaseStatus[] = [];
@@ -75,7 +78,7 @@ export async function getProjectOverview(
     caseRepo.countByStatus(input.projectId, 'SKIPPED'),
     runRepo.findFailureTrend(input.projectId, { days, bucketSize: 'day' }),
     caseRepo.computeReliabilitySummaries(input.projectId, { days }),
-    patternRepo.listByProject(input.projectId, { limit: TOP_PATTERNS_LIMIT }),
+    patternRepo.listByProject(input.projectId, { limit: PATTERN_INSPECTION_LIMIT }),
   ]);
 
   let trendRuns = 0;
@@ -115,6 +118,18 @@ export async function getProjectOverview(
     flakyTestCount,
   });
 
+  const patternSummaries: FailurePatternSummary[] = patterns.map((p) => ({
+    severity: p.severity,
+    occurrenceCount: p.occurrenceCount,
+  }));
+  const { criticalIssues } = detectIssues({
+    totalRuns: trendRuns,
+    recentFailureRate,
+    brokenTestCount,
+    flakyTestCount,
+    patterns: patternSummaries,
+  });
+
   return {
     totalRuns,
     totalTestCases,
@@ -124,6 +139,7 @@ export async function getProjectOverview(
     recentPassRate,
     healthStatus,
     topFlakyTests,
-    topFailurePatterns: patterns.map(toTopFailurePatternItem),
+    topFailurePatterns: patterns.slice(0, TOP_PATTERNS_LIMIT).map(toTopFailurePatternItem),
+    topCriticalIssues: criticalIssues.slice(0, TOP_CRITICAL_ISSUES_LIMIT),
   };
 }

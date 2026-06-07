@@ -1,10 +1,12 @@
 import type { TestRunStatus } from '../../domain/enums/test-run-status.js';
 import type { TestRunRepository } from '../../domain/ports/test-run.repository.js';
 import type { TestCaseRepository } from '../../domain/ports/test-case.repository.js';
+import type { FailurePatternRepository } from '../../domain/ports/failure-pattern.repository.js';
 import type { Pool } from '../../infrastructure/database/types.js';
 import { withTransaction } from '../../infrastructure/database/with-transaction.js';
 import type { IngestResponse } from '../../http/schemas/ingest.js';
 import type { IngestionAdapter, IngestTestRunInput } from '../ingestion/types.js';
+import { extractFailurePatterns } from './extract-failure-patterns.js';
 
 function deriveStatus(failedTests: number, skippedTests: number): TestRunStatus {
   if (failedTests > 0) return 'FAILED';
@@ -16,6 +18,7 @@ export async function ingestTestRun(
   pool: Pool,
   runRepo: TestRunRepository,
   caseRepo: TestCaseRepository,
+  patternRepo: FailurePatternRepository,
   adapter: IngestionAdapter,
   input: IngestTestRunInput,
 ): Promise<IngestResponse> {
@@ -50,6 +53,8 @@ export async function ingestTestRun(
       testRunId: run.id,
     }));
     await caseRepo.createMany(caseInputs, tx);
+
+    await extractFailurePatterns(patternRepo, cases, input.projectId, tx);
 
     return run;
   });

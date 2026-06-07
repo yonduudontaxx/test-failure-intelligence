@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { PgProjectRepository } from '../../../src/infrastructure/repositories/pg-project.repository.js';
 import { PgFailurePatternRepository } from '../../../src/infrastructure/repositories/pg-failure-pattern.repository.js';
 import type { FailureSeverity } from '../../../src/domain/enums/failure-severity.js';
+import { withTransaction } from '../../../src/infrastructure/database/with-transaction.js';
 import { createTestPool } from '../test-pool.js';
 import { truncateAll } from '../truncate.js';
 
@@ -148,6 +149,152 @@ describe('PgFailurePatternRepository (integration)', () => {
       await seedPattern({ category: null });
       const [pattern] = await repo.listByProject(projectId);
       expect(pattern.category).toBeUndefined();
+    });
+  });
+
+  describe('upsertByPattern', () => {
+    it('inserts a new pattern with occurrenceCount=1 and matching timestamps', async () => {
+      const before = new Date();
+      const result = await repo.upsertByPattern({
+        projectId,
+        pattern: 'TimeoutError: navigation timeout',
+        category: 'timeout',
+        severity: 'LOW',
+      });
+      const after = new Date();
+
+      expect(result).toMatchObject({
+        projectId,
+        pattern: 'TimeoutError: navigation timeout',
+        category: 'timeout',
+        severity: 'LOW',
+        occurrenceCount: 1,
+      });
+      expect(result.id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(result.firstSeenAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(result.firstSeenAt.getTime()).toBeLessThanOrEqual(after.getTime());
+      expect(result.lastSeenAt.getTime()).toBeGreaterThanOrEqual(result.firstSeenAt.getTime());
+    });
+
+    it('increments occurrenceCount on conflict (second upsert → 2)', async () => {
+      const first = await repo.upsertByPattern({
+        projectId,
+        pattern: 'AssertionError: expected',
+        category: 'assertion',
+        severity: 'LOW',
+      });
+      const second = await repo.upsertByPattern({
+        projectId,
+        pattern: 'AssertionError: expected',
+        category: 'assertion',
+        severity: 'LOW',
+      });
+
+      expect(second.id).toBe(first.id);
+      expect(second.occurrenceCount).toBe(2);
+      expect(second.firstSeenAt.getTime()).toBe(first.firstSeenAt.getTime());
+    });
+
+    it('reaches occurrenceCount=5 after five upserts', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await repo.upsertByPattern({
+          projectId,
+          pattern: 'fetch failed',
+          category: 'network',
+          severity: 'LOW',
+        });
+      }
+      const [row] = await repo.listByProject(projectId);
+      expect(row.occurrenceCount).toBe(5);
+    });
+
+    it('overwrites severity on conflict with the latest value', async () => {
+      await repo.upsertByPattern({
+        projectId,
+        pattern: 'deadlock detected',
+        category: 'database',
+        severity: 'LOW',
+      });
+      const upgraded = await repo.upsertByPattern({
+        projectId,
+        pattern: 'deadlock detected',
+        category: 'database',
+        severity: 'CRITICAL',
+      });
+      expect(upgraded.severity).toBe('CRITICAL');
+    });
+
+    it('advances last_seen_at on conflict (NOW() > original)', async () => {
+      const first = await repo.upsertByPattern({
+        projectId,
+        pattern: 'p',
+        category: 'unknown',
+        severity: 'LOW',
+      });
+      // small delay so NOW() advances
+      await new Promise((r) => setTimeout(r, 25));
+      const second = await repo.upsertByPattern({
+        projectId,
+        pattern: 'p',
+        category: 'unknown',
+        severity: 'LOW',
+      });
+      expect(second.lastSeenAt.getTime()).toBeGreaterThan(first.lastSeenAt.getTime());
+    });
+
+    it('keeps cross-project rows separate even when the pattern text matches', async () => {
+      const other = await projectRepo.create({ slug: 'other-svc-2', name: 'Other 2' });
+      const a = await repo.upsertByPattern({
+        projectId,
+        pattern: 'shared',
+        category: 'unknown',
+        severity: 'LOW',
+      });
+      const b = await repo.upsertByPattern({
+        projectId: other.id,
+        pattern: 'shared',
+        category: 'unknown',
+        severity: 'LOW',
+      });
+      expect(a.id).not.toBe(b.id);
+      expect(a.occurrenceCount).toBe(1);
+      expect(b.occurrenceCount).toBe(1);
+    });
+
+    it('rolls back via withTransaction — no row persists when the tx throws', async () => {
+      await expect(
+        withTransaction(pool, async (tx) => {
+          await repo.upsertByPattern(
+            {
+              projectId,
+              pattern: 'rolled-back',
+              category: 'unknown',
+              severity: 'LOW',
+            },
+            tx,
+          );
+          throw new Error('force rollback');
+        }),
+      ).rejects.toThrow('force rollback');
+
+      const found = await repo.listByProject(projectId);
+      expect(found.find((p) => p.pattern === 'rolled-back')).toBeUndefined();
+    });
+
+    it('persists via withTransaction when the tx commits', async () => {
+      await withTransaction(pool, async (tx) => {
+        await repo.upsertByPattern(
+          {
+            projectId,
+            pattern: 'committed',
+            category: 'unknown',
+            severity: 'LOW',
+          },
+          tx,
+        );
+      });
+      const found = await repo.listByProject(projectId);
+      expect(found.find((p) => p.pattern === 'committed')).toBeDefined();
     });
   });
 });
