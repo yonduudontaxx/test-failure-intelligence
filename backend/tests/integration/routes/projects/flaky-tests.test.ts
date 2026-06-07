@@ -144,4 +144,92 @@ describe('GET /api/v1/projects/:projectId/flaky-tests (integration)', () => {
     expect(body.data.total).toBe(1);
     expect(body.data.items[0].fullName).toBe('recent-flaky');
   });
+
+  describe('seeded via ingest endpoint', () => {
+    it('classifies flaky and broken tests correctly when populated through ingestion', async () => {
+      // flaky: PASSED then FAILED
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [{ testName: 'flaky-via-ingest', status: 'PASSED' }],
+        },
+      });
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 'flaky-via-ingest',
+              status: 'FAILED',
+              failureMessage: 'AssertionError: flaky one',
+              failureType: 'AssertionError',
+            },
+          ],
+        },
+      });
+      // broken: always FAILED
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 'broken-via-ingest',
+              status: 'FAILED',
+              failureMessage: 'TimeoutError: nope',
+              failureType: 'TimeoutError',
+            },
+          ],
+        },
+      });
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 'broken-via-ingest',
+              status: 'FAILED',
+              failureMessage: 'TimeoutError: nope again',
+              failureType: 'TimeoutError',
+            },
+          ],
+        },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/flaky-tests?days=30`,
+      });
+      expect(res.statusCode).toBe(200);
+      const items = res
+        .json()
+        .data.items.map((i: { fullName: string; reliabilityState: string }) => i);
+      const byName = Object.fromEntries(
+        items.map((i: { fullName: string; reliabilityState: string }) => [
+          i.fullName,
+          i.reliabilityState,
+        ]),
+      );
+      expect(byName['flaky-via-ingest']).toBe('FLAKY');
+      expect(byName['broken-via-ingest']).toBe('BROKEN');
+
+      // sanity: ingestion also wrote pattern rows
+      const { rows } = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      expect(parseInt(rows[0].count, 10)).toBeGreaterThan(0);
+    });
+  });
 });

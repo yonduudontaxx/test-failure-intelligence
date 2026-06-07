@@ -171,5 +171,63 @@ describe('GET /api/v1/projects/:projectId/health (integration)', () => {
       const warningCodes = body.data.warnings.map((w: { code: string }) => w.code);
       expect(warningCodes).toContain('BROKEN_TESTS_PRESENT');
     });
+
+    it('emits BROKEN_TESTS_THRESHOLD critical when three distinct tests are BROKEN via ingest', async () => {
+      for (const name of ['b1', 'b2', 'b3']) {
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/projects/${projectId}/ingest`,
+          payload: {
+            sourceType: 'api',
+            testRun: {},
+            testCases: [
+              {
+                testName: name,
+                status: 'FAILED',
+                failureMessage: `boom for ${name}`,
+                failureType: 'Error',
+              },
+            ],
+          },
+        });
+      }
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/health`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const criticalCodes = body.data.criticalIssues.map((c: { code: string }) => c.code);
+      const warningCodes = body.data.warnings.map((w: { code: string }) => w.code);
+      expect(criticalCodes).toContain('BROKEN_TESTS_THRESHOLD');
+      expect(warningCodes).toContain('BROKEN_TESTS_PRESENT');
+      expect(body.data.status).toBe('CRITICAL');
+    });
+
+    it('warnings array stays empty after ingesting only PASSED cases', async () => {
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            { testName: 'p1', status: 'PASSED' },
+            { testName: 'p2', status: 'PASSED' },
+          ],
+        },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/health`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.warnings).toEqual([]);
+      expect(body.data.criticalIssues).toEqual([]);
+      expect(body.data.status).toBe('HEALTHY');
+    });
   });
 });

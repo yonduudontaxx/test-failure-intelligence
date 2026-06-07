@@ -167,5 +167,63 @@ describe('GET /api/v1/projects/:projectId/overview (integration)', () => {
       expect(body.data.topFailurePatterns).toEqual([]);
       expect(body.data.topCriticalIssues).toEqual([]);
     });
+
+    it('surfaces the exact pattern string and severity in topFailurePatterns after ingestion', async () => {
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 't1',
+              status: 'FAILED',
+              failureMessage: 'Navigation timeout of 30000 ms exceeded',
+              failureType: 'TimeoutError',
+            },
+          ],
+        },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/overview`,
+      });
+      expect(res.statusCode).toBe(200);
+      const item = res.json().data.topFailurePatterns[0];
+      expect(item.pattern).toBe('TimeoutError: Navigation timeout of <N> ms exceeded');
+      expect(item.severity).toBe('LOW');
+      expect(item.occurrenceCount).toBe(1);
+    });
+
+    it('populates topCriticalIssues after ingesting three distinct BROKEN tests', async () => {
+      for (const name of ['b1', 'b2', 'b3']) {
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/projects/${projectId}/ingest`,
+          payload: {
+            sourceType: 'api',
+            testRun: {},
+            testCases: [
+              {
+                testName: name,
+                status: 'FAILED',
+                failureMessage: `boom ${name}`,
+                failureType: 'Error',
+              },
+            ],
+          },
+        });
+      }
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/overview`,
+      });
+      expect(res.statusCode).toBe(200);
+      const codes = res.json().data.topCriticalIssues.map((c: { code: string }) => c.code);
+      expect(codes).toContain('BROKEN_TESTS_THRESHOLD');
+    });
   });
 });

@@ -437,5 +437,102 @@ describe('POST /api/v1/projects/:projectId/ingest (integration)', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0].occurrence_count).toBe(2);
     });
+
+    it('persists exact canonical pattern string with assertion category and LOW severity for a single occurrence', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            { testName: 'p1', status: 'PASSED' },
+            {
+              testName: 'f1',
+              status: 'FAILED',
+              failureMessage: 'AssertionError: expected 1 to equal 2',
+              failureType: 'AssertionError',
+            },
+          ],
+        },
+      });
+      expect(res.statusCode).toBe(201);
+
+      const { rows } = await pool.query<{
+        pattern: string;
+        category: string | null;
+        severity: string;
+        occurrence_count: number;
+      }>(
+        `SELECT pattern, category, severity, occurrence_count
+           FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].pattern).toBe('AssertionError: AssertionError: expected 1 to equal 2');
+      expect(rows[0].category).toBe('assertion');
+      expect(rows[0].severity).toBe('LOW');
+      expect(rows[0].occurrence_count).toBe(1);
+    });
+
+    it('persists timeout category for a timeout-flavoured failure', async () => {
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 't',
+              status: 'FAILED',
+              failureMessage: 'Navigation timeout of 30000ms exceeded',
+              failureType: 'TimeoutError',
+            },
+          ],
+        },
+      });
+
+      const { rows } = await pool.query<{ category: string | null }>(
+        `SELECT category FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      expect(rows[0].category).toBe('timeout');
+    });
+
+    it('extracts a failure pattern from a JUnit XML upload', async () => {
+      const xml = `<?xml version="1.0"?>
+<testsuites>
+  <testsuite name="UnitSuite" timestamp="2026-06-01T12:00:00Z">
+    <testcase name="t-good" time="0.1"/>
+    <testcase name="t-bad" time="0.2"><failure type="AssertionError" message="expected foo to equal bar"/></testcase>
+  </testsuite>
+</testsuites>`;
+      const { payload, contentType } = buildMultipart([
+        {
+          name: 'file',
+          filename: 'junit.xml',
+          contentType: 'application/xml',
+          content: xml,
+        },
+        { name: 'format', value: 'junit-xml' },
+      ]);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        headers: { 'content-type': contentType },
+        payload,
+      });
+      expect(res.statusCode).toBe(201);
+
+      const { rows } = await pool.query<{ pattern: string; category: string | null }>(
+        `SELECT pattern, category FROM failure_patterns WHERE project_id = $1`,
+        [projectId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].pattern.toLowerCase()).toContain('expected foo to equal bar');
+      expect(rows[0].category).toBe('assertion');
+    });
   });
 });
