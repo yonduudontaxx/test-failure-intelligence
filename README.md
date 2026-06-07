@@ -131,6 +131,7 @@ In CI, the workflow provisions an ephemeral `postgres:16-alpine` service contain
 | `npm run dev` | Start Next.js dev server with Turbopack |
 | `npm run build` | Build for production |
 | `npm start` | Run the production build |
+| `npm test` | Run Vitest smoke tests once (CI mode) |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run lint` | Lint `src/` |
 | `npm run lint:fix` | Lint and auto-fix |
@@ -180,6 +181,31 @@ Swagger UI is available at `http://localhost:3001/documentation` when the backen
 | `GET` | `/api/v1/projects/:projectId/failure-patterns` | List recorded failure patterns ordered by occurrence count; supports `?limit=` (1–100, default 50). Patterns are extracted during ingestion (FAILED/ERROR cases with `failureMessage` or `failureType`) with heuristic severity assignment |
 
 All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions and the error-code table, [docs/architecture/ingestion.md](docs/architecture/ingestion.md) for the ingestion adapter contract and supported source types, and [docs/architecture/analytics.md](docs/architecture/analytics.md) for the reliability classifier, health-evaluator thresholds, and aggregated SQL approach behind the analytics endpoints.
+
+## Frontend Dashboard
+
+The Next.js dashboard consumes the API above and surfaces seven pages: projects list, project dashboard, run history, run detail, reliability report, failure trends, and failure pattern explorer.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser. The backend must be reachable at `http://localhost:3001` (the default) or at whatever URL you set in `NEXT_PUBLIC_API_URL` before starting the dev server:
+
+```bash
+NEXT_PUBLIC_API_URL=https://tfi.example.com npm run dev
+```
+
+Run the smoke tests (Vitest + React Testing Library, one renders-without-crashing test per page):
+
+```bash
+cd frontend
+npm test
+```
+
+See [docs/architecture/frontend.md](docs/architecture/frontend.md) for the page inventory, API client architecture, RSC-vs-client-component decisions, URL-as-state convention, error boundaries, and a checklist for adding new pages.
 
 ## Production Docker Compose
 
