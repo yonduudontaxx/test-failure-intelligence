@@ -157,5 +157,6 @@ silently break the contract those tests describe.
 - **Data layer below:** [data-layer.md](./data-layer.md)
 - **Ingestion pipeline:** [ingestion.md](./ingestion.md)
 - **Analytics & reliability engine:** [analytics.md](./analytics.md)
+- **Frontend consumer:** [frontend.md](./frontend.md) — the Next.js dashboard at `http://localhost:3000` consumes every endpoint listed above
 - **Live OpenAPI spec:** Swagger UI at `/documentation` when the
   backend is running
