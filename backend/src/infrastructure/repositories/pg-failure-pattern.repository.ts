@@ -1,7 +1,11 @@
 import type { Pool, QueryResultRow } from '../database/types.js';
 import type { FailurePattern } from '../../domain/entities/failure-pattern.js';
 import type { FailureSeverity } from '../../domain/enums/failure-severity.js';
-import type { FailurePatternRepository } from '../../domain/ports/failure-pattern.repository.js';
+import type {
+  FailurePatternRepository,
+  UpsertFailurePatternInput,
+} from '../../domain/ports/failure-pattern.repository.js';
+import type { TxClient } from '../../domain/ports/tx-client.js';
 
 const DEFAULT_LIMIT = 50;
 
@@ -48,5 +52,24 @@ export class PgFailurePatternRepository implements FailurePatternRepository {
       [projectId, limit],
     );
     return result.rows.map(mapRow);
+  }
+
+  async upsertByPattern(
+    input: UpsertFailurePatternInput,
+    client?: TxClient,
+  ): Promise<FailurePattern> {
+    const runner = client ?? this.pool;
+    const result = await runner.query(
+      `INSERT INTO failure_patterns
+         (project_id, pattern, category, severity, occurrence_count, first_seen_at, last_seen_at)
+       VALUES ($1, $2, $3, $4, 1, NOW(), NOW())
+       ON CONFLICT (project_id, pattern) DO UPDATE
+         SET occurrence_count = failure_patterns.occurrence_count + 1,
+             severity         = EXCLUDED.severity,
+             last_seen_at     = GREATEST(failure_patterns.last_seen_at, EXCLUDED.last_seen_at)
+       RETURNING ${RETURN_COLUMNS}`,
+      [input.projectId, input.pattern, input.category, input.severity],
+    );
+    return mapRow(result.rows[0] as FailurePatternRow);
   }
 }

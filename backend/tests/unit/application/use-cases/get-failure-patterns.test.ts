@@ -22,8 +22,9 @@ function makeProjectRepo() {
 
 function makePatternRepo() {
   const listByProject = jest.fn<FailurePatternRepository['listByProject']>();
-  const repo: FailurePatternRepository = { listByProject };
-  return { repo, listByProject };
+  const upsertByPattern = jest.fn<FailurePatternRepository['upsertByPattern']>();
+  const repo: FailurePatternRepository = { listByProject, upsertByPattern };
+  return { repo, listByProject, upsertByPattern };
 }
 
 function sampleProject(): Project {
