@@ -140,6 +140,7 @@ export const overviewResponseSchema = {
     'healthStatus',
     'topFlakyTests',
     'topFailurePatterns',
+    'topCriticalIssues',
   ],
   properties: {
     totalRuns: { type: 'integer' },
@@ -157,6 +158,7 @@ export const overviewResponseSchema = {
       type: 'array',
       items: topFailurePatternItemSchema,
     },
+    topCriticalIssues: { type: 'array', items: healthIssueItemSchema },
   },
 } as const;
 
@@ -269,6 +271,7 @@ export interface OverviewResponse {
   healthStatus: 'HEALTHY' | 'WARNING' | 'CRITICAL';
   topFlakyTests: FlakyTestItem[];
   topFailurePatterns: TopFailurePatternItem[];
+  topCriticalIssues: HealthIssueItem[];
 }
 
 export interface FailurePatternsQuery {

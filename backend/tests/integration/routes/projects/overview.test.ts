@@ -111,4 +111,61 @@ describe('GET /api/v1/projects/:projectId/overview (integration)', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().error.code).toBe('PROJECT_NOT_FOUND');
   });
+
+  describe('topFailurePatterns and topCriticalIssues', () => {
+    it('topFailurePatterns is populated after ingestion of FAILED cases', async () => {
+      const ingest = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/ingest`,
+        payload: {
+          sourceType: 'api',
+          testRun: {},
+          testCases: [
+            {
+              testName: 't1',
+              status: 'FAILED',
+              failureMessage: 'TimeoutError: navigation timeout',
+              failureType: 'TimeoutError',
+            },
+            {
+              testName: 't2',
+              status: 'FAILED',
+              failureMessage: 'AssertionError: expected x',
+              failureType: 'AssertionError',
+            },
+          ],
+        },
+      });
+      expect(ingest.statusCode).toBe(201);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/overview`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.topFailurePatterns.length).toBeGreaterThan(0);
+      expect(body.data.topFailurePatterns[0]).toEqual(
+        expect.objectContaining({
+          pattern: expect.any(String),
+          severity: expect.any(String),
+          occurrenceCount: expect.any(Number),
+        }),
+      );
+    });
+
+    it('topFailurePatterns and topCriticalIssues are empty arrays for a healthy project', async () => {
+      await seedExecution('healthy', 'PASSED');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/projects/${projectId}/overview`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.data.topFailurePatterns).toEqual([]);
+      expect(body.data.topCriticalIssues).toEqual([]);
+    });
+  });
 });
