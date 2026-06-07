@@ -12,17 +12,26 @@
 #   TFI_DASHBOARD_URL — base URL of the dashboard (e.g. https://tfi-dashboard.example.com)
 #   TFI_PROJECT_ID    — UUID of the project in TFI (visible in the projects list)
 #
+# Required job permissions for the PR comment step:
+#   permissions:
+#     contents: read           # default for checkout
+#     pull-requests: write     # required so the comment step can post on PRs
+#
+#   Without `pull-requests: write` the github-script step fails with a 403
+#   on pull_request events. Push events skip the comment step entirely.
+#
 # Ingestion endpoint:
 #   POST $TFI_API_URL/api/v1/projects/$TFI_PROJECT_ID/ingest
 #
 # Dashboard deep link:
 #   The ingest response includes { "data": { "runId": "...", "testCaseCount": N } }.
 #   We parse runId with jq (pre-installed on GitHub-hosted ubuntu-latest
-#   runners — no install step required) and emit a clickable link to
-#   $GITHUB_STEP_SUMMARY pointing at:
+#   runners — no install step required) and surface the link two ways:
+#     1. GitHub Actions job summary    — at the top of the workflow run page
+#     2. PR comment (pull_request only) — into the conversation, so the PR
+#                                          author gets a notification
+#   The link points at:
 #     $TFI_DASHBOARD_URL/projects/$TFI_PROJECT_ID/runs/<runId>
-#   The link renders at the top of the GitHub Actions run page so reviewers
-#   can jump straight to the dashboard from CI.
 #
 # Supported formats:
 #   - jest         Jest JSON          (multipart, format=jest)
@@ -57,6 +66,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
 
@@ -73,8 +85,9 @@ jobs:
 
       # ── Ingest into TFI ─────────────────────────────────────────────────
       # if: always() — see header for why this matters.
-      # Captures the response, parses runId with jq, and writes a dashboard
-      # deep-link to the GitHub Actions job summary.
+      # Captures the response, parses runId with jq, exports it to
+      # $GITHUB_ENV for the comment step, and writes a dashboard deep-link
+      # to the GitHub Actions job summary.
       - name: Ingest test results
         if: always()
         run: |
@@ -89,6 +102,7 @@ jobs:
             -F "buildNumber=${{ github.run_number }}" \
             -F "externalId=${{ github.run_id }}")
           run_id=$(echo "$response" | jq -r '.data.runId')
+          echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
           url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
           {
             echo "### Test Failure Intelligence"
@@ -96,10 +110,30 @@ jobs:
             echo "[View run dashboard]($url)"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ── Comment dashboard link on PR ────────────────────────────────────
+      # Only runs on pull_request events. The previous step exported
+      # TFI_RUN_ID to $GITHUB_ENV so this step can read it.
+      - name: Comment dashboard link on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v5
+        env:
+          TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+          TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+          RUN_ID: ${{ env.TFI_RUN_ID }}
+        with:
+          script: |
+            const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+            });
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Alternative formats — replace the two steps above with the block matching
-# your test runner. Each block uses the same response-capture + summary
-# pattern so the dashboard deep-link works regardless of format.
+# Alternative formats — replace the two-step run + ingest block above with
+# the block matching your test runner. The PR comment step is the same for
+# every format and reads TFI_RUN_ID from $GITHUB_ENV.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─── Playwright JSON ─────────────────────────────────────────────────────────
@@ -126,12 +160,30 @@ jobs:
 #         -F "buildNumber=${{ github.run_number }}" \
 #         -F "externalId=${{ github.run_id }}")
 #       run_id=$(echo "$response" | jq -r '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
 #       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
 #         echo "[View run dashboard]($url)"
 #       } >> "$GITHUB_STEP_SUMMARY"
+#
+#   - name: Comment dashboard link on PR
+#     if: always() && github.event_name == 'pull_request'
+#     uses: actions/github-script@v5
+#     env:
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       RUN_ID: ${{ env.TFI_RUN_ID }}
+#     with:
+#       script: |
+#         const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+#         github.rest.issues.createComment({
+#           owner: context.repo.owner,
+#           repo: context.repo.repo,
+#           issue_number: context.issue.number,
+#           body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+#         });
 
 # ─── JUnit XML ───────────────────────────────────────────────────────────────
 # Use as the universal interchange format. Most test runners can emit JUnit
@@ -160,12 +212,30 @@ jobs:
 #         -F "buildNumber=${{ github.run_number }}" \
 #         -F "externalId=${{ github.run_id }}")
 #       run_id=$(echo "$response" | jq -r '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
 #       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
 #         echo "[View run dashboard]($url)"
 #       } >> "$GITHUB_STEP_SUMMARY"
+#
+#   - name: Comment dashboard link on PR
+#     if: always() && github.event_name == 'pull_request'
+#     uses: actions/github-script@v5
+#     env:
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       RUN_ID: ${{ env.TFI_RUN_ID }}
+#     with:
+#       script: |
+#         const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+#         github.rest.issues.createComment({
+#           owner: context.repo.owner,
+#           repo: context.repo.repo,
+#           issue_number: context.issue.number,
+#           body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+#         });
 
 # ─── Canonical API JSON (application/json body) ──────────────────────────────
 # Use when you build the canonical TFI JSON yourself — for example, from a
@@ -204,12 +274,30 @@ jobs:
 #         -H "Content-Type: application/json" \
 #         --data-binary @canonical-results.json)
 #       run_id=$(echo "$response" | jq -r '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
 #       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
 #         echo "[View run dashboard]($url)"
 #       } >> "$GITHUB_STEP_SUMMARY"
+#
+#   - name: Comment dashboard link on PR
+#     if: always() && github.event_name == 'pull_request'
+#     uses: actions/github-script@v5
+#     env:
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       RUN_ID: ${{ env.TFI_RUN_ID }}
+#     with:
+#       script: |
+#         const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+#         github.rest.issues.createComment({
+#           owner: context.repo.owner,
+#           repo: context.repo.repo,
+#           issue_number: context.issue.number,
+#           body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+#         });
 
 # ─── Generic JSON (multipart file upload of canonical JSON) ──────────────────
 # Use when you have a canonical-shape JSON file as a CI artifact and want to
@@ -232,9 +320,27 @@ jobs:
 #         -F "buildNumber=${{ github.run_number }}" \
 #         -F "externalId=${{ github.run_id }}")
 #       run_id=$(echo "$response" | jq -r '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
 #       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
 #         echo "[View run dashboard]($url)"
 #       } >> "$GITHUB_STEP_SUMMARY"
+#
+#   - name: Comment dashboard link on PR
+#     if: always() && github.event_name == 'pull_request'
+#     uses: actions/github-script@v5
+#     env:
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       RUN_ID: ${{ env.TFI_RUN_ID }}
+#     with:
+#       script: |
+#         const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+#         github.rest.issues.createComment({
+#           owner: context.repo.owner,
+#           repo: context.repo.repo,
+#           issue_number: context.issue.number,
+#           body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+#         });
