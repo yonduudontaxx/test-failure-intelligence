@@ -1,0 +1,94 @@
+# This workflow dogfoods the Test Failure Intelligence platform.
+# It runs the backend unit tests, ingests the results into TFI itself,
+# and posts a dashboard link on PRs.
+# Requires three repo variables: TFI_API_URL, TFI_PROJECT_ID, TFI_DASHBOARD_URL
+
+name: Ingest Test Results
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  ingest:
+    name: Ingest Test Results
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tfi
+          POSTGRES_PASSWORD: tfi_dev_password
+          POSTGRES_DB: tfi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Install jest-junit reporter
+        run: cd backend && npm install --no-save jest-junit
+
+      - name: Run backend unit tests with JUnit XML output
+        env:
+          JEST_JUNIT_OUTPUT_FILE: jest-results.xml
+        run: |
+          cd backend && npx jest --testPathPattern=tests/unit --passWithNoTests --reporters=default --reporters=jest-junit
+
+      - name: Ingest test results into TFI
+        if: always()
+        run: |
+          response=$(curl --fail-with-body -sS -X POST \
+            "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+            -F "file=@backend/jest-results.xml" \
+            -F "format=junit-xml" \
+            -F "branch=${{ github.ref_name }}" \
+            -F "commitSha=${{ github.sha }}" \
+            -F "environment=ci" \
+            -F "pipelineName=${{ github.workflow }}" \
+            -F "buildNumber=${{ github.run_number }}" \
+            -F "externalId=${{ github.run_id }}")
+          run_id=$(echo "$response" | jq -r '.data.runId')
+          echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
+          url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+          {
+            echo "### Test Failure Intelligence"
+            echo ""
+            echo "[View run dashboard]($url)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment dashboard link on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v5
+        env:
+          TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+          TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+          RUN_ID: ${{ env.TFI_RUN_ID }}
+        with:
+          script: |
+            const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 🧪 Test Failure Intelligence\n\n[View run dashboard](${url})\n\nResults ingested automatically. Click the link to see test cases, failure patterns, and reliability data.`,
+            });
