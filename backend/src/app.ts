@@ -17,6 +17,7 @@ import getRunRoute from './http/routes/projects/get-run.route.js';
 import getRunCasesRoute from './http/routes/projects/get-run-cases.route.js';
 import flakyTestsRoute from './http/routes/projects/flaky-tests.route.js';
 import failureTrendsRoute from './http/routes/projects/failure-trends.route.js';
+import projectHealthRoute from './http/routes/projects/project-health.route.js';
 
 export interface BuildAppOptions extends FastifyServerOptions {
   pool: Pool;
@@ -49,6 +50,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   app.register(getRunCasesRoute, { prefix: '/api/v1' });
   app.register(flakyTestsRoute, { prefix: '/api/v1' });
   app.register(failureTrendsRoute, { prefix: '/api/v1' });
+  app.register(projectHealthRoute, { prefix: '/api/v1' });
 
   await app.ready();
   return app;
