@@ -6,9 +6,13 @@ import type {
   ReliabilitySummary,
   TestCaseRepository,
 } from '../../domain/ports/test-case.repository.js';
+import type { FailurePatternRepository } from '../../domain/ports/failure-pattern.repository.js';
 import { classifyReliability } from '../../domain/services/reliability-classifier.js';
 import { evaluateHealth } from '../../domain/services/health-evaluator.js';
+import { detectIssues, type FailurePatternSummary } from '../../domain/services/issue-detector.js';
 import type { HealthResponse } from '../../http/schemas/analytics.js';
+
+const PATTERN_INSPECTION_LIMIT = 100;
 
 function synthesizeStatuses(summary: ReliabilitySummary): TestCaseStatus[] {
   const arr: TestCaseStatus[] = [];
@@ -25,12 +29,13 @@ export async function getProjectHealth(
   projectRepo: ProjectRepository,
   runRepo: TestRunRepository,
   caseRepo: TestCaseRepository,
+  patternRepo: FailurePatternRepository,
   input: { projectId: string; days: number },
 ): Promise<HealthResponse> {
   const project = await projectRepo.findById(input.projectId);
   if (!project) throw createError(404, 'Project not found');
 
-  const [trendBuckets, summaries] = await Promise.all([
+  const [trendBuckets, summaries, patterns] = await Promise.all([
     runRepo.findFailureTrend(input.projectId, {
       days: input.days,
       bucketSize: 'day',
@@ -38,6 +43,7 @@ export async function getProjectHealth(
     caseRepo.computeReliabilitySummaries(input.projectId, {
       days: input.days,
     }),
+    patternRepo.listByProject(input.projectId, { limit: PATTERN_INSPECTION_LIMIT }),
   ]);
 
   let totalRuns = 0;
@@ -64,6 +70,19 @@ export async function getProjectHealth(
     flakyTestCount,
   });
 
+  const patternSummaries: FailurePatternSummary[] = patterns.map((p) => ({
+    severity: p.severity,
+    occurrenceCount: p.occurrenceCount,
+  }));
+
+  const { warnings, criticalIssues } = detectIssues({
+    totalRuns,
+    recentFailureRate,
+    brokenTestCount,
+    flakyTestCount,
+    patterns: patternSummaries,
+  });
+
   return {
     status,
     totalRuns,
@@ -72,5 +91,7 @@ export async function getProjectHealth(
     brokenTestCount,
     flakyTestCount,
     windowDays: input.days,
+    warnings,
+    criticalIssues,
   };
 }

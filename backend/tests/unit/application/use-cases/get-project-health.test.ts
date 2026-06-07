@@ -6,7 +6,9 @@ import type {
   ReliabilitySummary,
   TestCaseRepository,
 } from '../../../../src/domain/ports/test-case.repository.js';
+import type { FailurePatternRepository } from '../../../../src/domain/ports/failure-pattern.repository.js';
 import type { Project } from '../../../../src/domain/entities/project.js';
+import type { FailurePattern } from '../../../../src/domain/entities/failure-pattern.js';
 
 const FROZEN = new Date('2026-06-05T12:00:00.000Z');
 
@@ -47,6 +49,27 @@ function makeCaseRepo() {
   return { repo, computeReliabilitySummaries };
 }
 
+function makePatternRepo() {
+  const listByProject = jest.fn<FailurePatternRepository['listByProject']>();
+  const upsertByPattern = jest.fn<FailurePatternRepository['upsertByPattern']>();
+  const repo: FailurePatternRepository = { listByProject, upsertByPattern };
+  listByProject.mockResolvedValue([]);
+  return { repo, listByProject };
+}
+
+function samplePattern(overrides: Partial<FailurePattern> = {}): FailurePattern {
+  return {
+    id: 'pat-1',
+    projectId: 'p-1',
+    pattern: 'TimeoutError: navigation',
+    severity: 'LOW',
+    occurrenceCount: 1,
+    firstSeenAt: FROZEN,
+    lastSeenAt: FROZEN,
+    ...overrides,
+  };
+}
+
 function sampleProject(): Project {
   return {
     id: 'p-1',
@@ -76,13 +99,14 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([
       { date: '2026-06-01', totalRuns: 10, failedRuns: 2, passRate: 0.8 },
     ]);
     computeReliabilitySummaries.mockResolvedValue([]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 14,
     });
@@ -100,6 +124,7 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([
       { date: '2026-06-01', totalRuns: 50, failedRuns: 0, passRate: 1 },
@@ -108,7 +133,7 @@ describe('getProjectHealth', () => {
       summary({ fullName: 'a', passCount: 10, failCount: 0 }),
     ]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -119,6 +144,7 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([
       { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
@@ -127,7 +153,7 @@ describe('getProjectHealth', () => {
       summary({ fullName: 'broken', passCount: 0, failCount: 5 }),
     ]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -139,6 +165,7 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([
       { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
@@ -149,7 +176,7 @@ describe('getProjectHealth', () => {
       summary({ fullName: 'b3', passCount: 0, failCount: 5 }),
     ]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -161,11 +188,12 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([]);
     computeReliabilitySummaries.mockResolvedValue([]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -179,6 +207,7 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     // 3 failed / 30 total = 10% failure, 90% pass
     findFailureTrend.mockResolvedValue([
@@ -187,7 +216,7 @@ describe('getProjectHealth', () => {
     ]);
     computeReliabilitySummaries.mockResolvedValue([]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -200,6 +229,7 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(sampleProject());
     findFailureTrend.mockResolvedValue([
       { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
@@ -211,7 +241,7 @@ describe('getProjectHealth', () => {
       summary({ fullName: 'broken', passCount: 0, failCount: 8 }),
     ]);
 
-    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, {
+    const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
       projectId: 'p-1',
       days: 30,
     });
@@ -223,10 +253,11 @@ describe('getProjectHealth', () => {
     const { repo: projectRepo, findById } = makeProjectRepo();
     const { repo: runRepo, findFailureTrend } = makeRunRepo();
     const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+    const { repo: patternRepo } = makePatternRepo();
     findById.mockResolvedValue(null);
 
     await expect(
-      getProjectHealth(projectRepo, runRepo, caseRepo, {
+      getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
         projectId: 'p-missing',
         days: 30,
       }),
@@ -236,5 +267,128 @@ describe('getProjectHealth', () => {
     });
     expect(findFailureTrend).not.toHaveBeenCalled();
     expect(computeReliabilitySummaries).not.toHaveBeenCalled();
+  });
+
+  describe('warnings and critical issues', () => {
+    it('returns empty arrays when project is healthy', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+
+      const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+      expect(result.warnings).toEqual([]);
+      expect(result.criticalIssues).toEqual([]);
+    });
+
+    it('emits BROKEN_TESTS_PRESENT warning when one test is BROKEN', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 1, passRate: 0.9 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([
+        summary({ fullName: 'broken', passCount: 0, failCount: 5 }),
+      ]);
+
+      const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+      expect(result.warnings.map((w) => w.code)).toContain('BROKEN_TESTS_PRESENT');
+      expect(result.criticalIssues).toEqual([]);
+    });
+
+    it('emits BROKEN_TESTS_THRESHOLD critical when three tests are BROKEN', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 1, passRate: 0.9 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([
+        summary({ fullName: 'b1', passCount: 0, failCount: 3 }),
+        summary({ fullName: 'b2', passCount: 0, failCount: 2 }),
+        summary({ fullName: 'b3', passCount: 0, failCount: 4 }),
+      ]);
+
+      const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+      expect(result.criticalIssues.map((c) => c.code)).toContain('BROKEN_TESTS_THRESHOLD');
+      expect(result.warnings.map((w) => w.code)).toContain('BROKEN_TESTS_PRESENT');
+    });
+
+    it('emits HIGH_SEVERITY_PATTERN warning when a HIGH pattern exists', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo, listByProject } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+      listByProject.mockResolvedValue([samplePattern({ severity: 'HIGH', occurrenceCount: 22 })]);
+
+      const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+      expect(result.warnings.map((w) => w.code)).toContain('HIGH_SEVERITY_PATTERN');
+      expect(result.criticalIssues.map((c) => c.code)).not.toContain('CRITICAL_SEVERITY_PATTERN');
+    });
+
+    it('emits CRITICAL_SEVERITY_PATTERN critical when a CRITICAL pattern exists', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo, listByProject } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+      listByProject.mockResolvedValue([
+        samplePattern({ severity: 'CRITICAL', occurrenceCount: 60 }),
+      ]);
+
+      const result = await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+      expect(result.criticalIssues.map((c) => c.code)).toContain('CRITICAL_SEVERITY_PATTERN');
+    });
+
+    it('calls patternRepo.listByProject with the correct projectId and a bounded limit', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, findFailureTrend } = makeRunRepo();
+      const { repo: caseRepo, computeReliabilitySummaries } = makeCaseRepo();
+      const { repo: patternRepo, listByProject } = makePatternRepo();
+      findById.mockResolvedValue(sampleProject());
+      findFailureTrend.mockResolvedValue([]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+
+      await getProjectHealth(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+        days: 30,
+      });
+
+      expect(listByProject).toHaveBeenCalledWith('p-1', { limit: 100 });
+    });
   });
 });

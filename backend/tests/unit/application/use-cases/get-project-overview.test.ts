@@ -54,8 +54,9 @@ function makeCaseRepo() {
 
 function makePatternRepo() {
   const listByProject = jest.fn<FailurePatternRepository['listByProject']>();
-  const repo: FailurePatternRepository = { listByProject };
-  return { repo, listByProject };
+  const upsertByPattern = jest.fn<FailurePatternRepository['upsertByPattern']>();
+  const repo: FailurePatternRepository = { listByProject, upsertByPattern };
+  return { repo, listByProject, upsertByPattern };
 }
 
 function sampleProject(): Project {
@@ -249,5 +250,255 @@ describe('getProjectOverview', () => {
       message: 'Project not found',
     });
     expect(runCount).not.toHaveBeenCalled();
+  });
+
+  describe('topFailurePatterns and topCriticalIssues', () => {
+    it('limits topFailurePatterns to 5 even when more patterns exist', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(0);
+      caseCount.mockResolvedValue(0);
+      countByStatus.mockResolvedValue(0);
+      findFailureTrend.mockResolvedValue([]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+
+      // 8 patterns, sorted DESC by occurrenceCount as the repo would return them
+      const patterns: FailurePattern[] = Array.from({ length: 8 }, (_, i) => ({
+        id: `p-${i}`,
+        projectId: 'p-1',
+        pattern: `pattern-${i}`,
+        severity: 'LOW',
+        firstSeenAt: FROZEN,
+        lastSeenAt: FROZEN,
+        occurrenceCount: 100 - i,
+      }));
+      patternList.mockResolvedValue(patterns);
+
+      const result = await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      expect(result.topFailurePatterns).toHaveLength(5);
+      expect(result.topFailurePatterns.map((p) => p.pattern)).toEqual([
+        'pattern-0',
+        'pattern-1',
+        'pattern-2',
+        'pattern-3',
+        'pattern-4',
+      ]);
+    });
+
+    it('asks patternRepo for 50 patterns even though only 5 are surfaced', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(0);
+      caseCount.mockResolvedValue(0);
+      countByStatus.mockResolvedValue(0);
+      findFailureTrend.mockResolvedValue([]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+      patternList.mockResolvedValue([]);
+
+      await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      expect(patternList).toHaveBeenCalledWith('p-1', { limit: 50 });
+    });
+
+    it('topFailurePatterns is empty when no patterns exist', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(0);
+      caseCount.mockResolvedValue(0);
+      countByStatus.mockResolvedValue(0);
+      findFailureTrend.mockResolvedValue([]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+      patternList.mockResolvedValue([]);
+
+      const result = await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      expect(result.topFailurePatterns).toEqual([]);
+      expect(result.topCriticalIssues).toEqual([]);
+    });
+
+    it('populates topCriticalIssues when CRITICAL conditions fire', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(0);
+      caseCount.mockResolvedValue(0);
+      countByStatus.mockResolvedValue(0);
+      // Drive PASS_RATE_CRITICAL and BROKEN_TESTS_THRESHOLD
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 5, passRate: 0.5 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([
+        {
+          fullName: 'b1',
+          testName: 'b1',
+          passCount: 0,
+          failCount: 5,
+          skippedCount: 0,
+          lastStatus: 'FAILED',
+        },
+        {
+          fullName: 'b2',
+          testName: 'b2',
+          passCount: 0,
+          failCount: 5,
+          skippedCount: 0,
+          lastStatus: 'FAILED',
+        },
+        {
+          fullName: 'b3',
+          testName: 'b3',
+          passCount: 0,
+          failCount: 5,
+          skippedCount: 0,
+          lastStatus: 'FAILED',
+        },
+      ]);
+      patternList.mockResolvedValue([
+        {
+          id: 'p1',
+          projectId: 'p-1',
+          pattern: 'crit',
+          severity: 'CRITICAL',
+          occurrenceCount: 60,
+          firstSeenAt: FROZEN,
+          lastSeenAt: FROZEN,
+        },
+      ]);
+
+      const result = await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      const codes = result.topCriticalIssues.map((c) => c.code);
+      expect(codes).toContain('PASS_RATE_CRITICAL');
+      expect(codes).toContain('BROKEN_TESTS_THRESHOLD');
+      expect(codes).toContain('CRITICAL_SEVERITY_PATTERN');
+    });
+
+    it('slices topCriticalIssues to 3 even when more critical conditions fire', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(0);
+      caseCount.mockResolvedValue(0);
+      countByStatus.mockResolvedValue(0);
+      // PASS_RATE_CRITICAL + BROKEN_TESTS_THRESHOLD + FLAKY_TESTS_HIGH + 3 CRITICAL_SEVERITY_PATTERN = 6 critical
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 5, passRate: 0.5 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([
+        ...Array.from({ length: 3 }, (_, i) => ({
+          fullName: `b${i}`,
+          testName: `b${i}`,
+          passCount: 0,
+          failCount: 5,
+          skippedCount: 0,
+          lastStatus: 'FAILED' as const,
+        })),
+        ...Array.from({ length: 20 }, (_, i) => ({
+          fullName: `f${i}`,
+          testName: `f${i}`,
+          passCount: 5,
+          failCount: 3,
+          skippedCount: 0,
+          lastStatus: 'FAILED' as const,
+        })),
+      ]);
+      patternList.mockResolvedValue(
+        Array.from({ length: 3 }, (_, i) => ({
+          id: `p${i}`,
+          projectId: 'p-1',
+          pattern: `crit-${i}`,
+          severity: 'CRITICAL' as const,
+          occurrenceCount: 60 + i,
+          firstSeenAt: FROZEN,
+          lastSeenAt: FROZEN,
+        })),
+      );
+
+      const result = await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      expect(result.topCriticalIssues).toHaveLength(3);
+    });
+
+    it('topCriticalIssues is empty when project is healthy', async () => {
+      const { repo: projectRepo, findById } = makeProjectRepo();
+      const { repo: runRepo, countByProject: runCount, findFailureTrend } = makeRunRepo();
+      const {
+        repo: caseRepo,
+        countByProject: caseCount,
+        countByStatus,
+        computeReliabilitySummaries,
+      } = makeCaseRepo();
+      const { repo: patternRepo, listByProject: patternList } = makePatternRepo();
+
+      findById.mockResolvedValue(sampleProject());
+      runCount.mockResolvedValue(10);
+      caseCount.mockResolvedValue(20);
+      countByStatus.mockResolvedValue(0);
+      findFailureTrend.mockResolvedValue([
+        { date: '2026-06-01', totalRuns: 10, failedRuns: 0, passRate: 1 },
+      ]);
+      computeReliabilitySummaries.mockResolvedValue([]);
+      patternList.mockResolvedValue([]);
+
+      const result = await getProjectOverview(projectRepo, runRepo, caseRepo, patternRepo, {
+        projectId: 'p-1',
+      });
+
+      expect(result.topCriticalIssues).toEqual([]);
+    });
   });
 });

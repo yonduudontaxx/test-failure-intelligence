@@ -1,10 +1,12 @@
 # Analytics & Reliability Engine
 
-Maintainer reference for the Epic 5 analytics and reliability engine.
-The canonical design lives in the spec and the Epic 5 plan, linked at
-the bottom — this file is a scannable map of how raw `TestRun` +
-`TestCaseResult` rows become flaky-test lists, failure trends, health
-verdicts, and overview dashboards.
+Maintainer reference for the analytics, reliability, and failure-
+intelligence engine. The canonical design lives in the spec and the
+Epic 5 + Epic 6 plans, linked at the bottom — this file is a scannable
+map of how raw `TestRun` + `TestCaseResult` rows become flaky-test
+lists, failure trends, health verdicts, overview dashboards, and the
+structured failure-pattern records that drive severity and issue
+detection.
 
 ## At a glance
 
@@ -12,7 +14,9 @@ verdicts, and overview dashboards.
 Fastify route  →  Use case  →  Repository port  →  Pg<Resource>Repository  →  PostgreSQL
                      │
                      ▼
-              Domain service (classifyReliability / evaluateHealth)
+       Domain services (pure functions)
+         classifyReliability   evaluateHealth
+         extractPattern        assignSeverity        detectIssues
 ```
 
 Routes live in `backend/src/http/routes/projects/<name>.route.ts`,
@@ -28,9 +32,11 @@ patterns these queries extend.
 
 ## Domain services
 
-Two pure functions in `backend/src/domain/services/`. Both take plain
+Five pure functions in `backend/src/domain/services/`. All take plain
 inputs, return plain outputs, and have zero external dependencies —
-the unit tests drive them with literal arrays.
+the unit tests drive them with literal arrays. Two were added in Epic
+5 (`classifyReliability`, `evaluateHealth`); three were added in
+Epic 6 (`extractPattern`, `assignSeverity`, `detectIssues`).
 
 ### `classifyReliability(results: TestCaseStatus[]): ReliabilityState`
 
@@ -63,6 +69,80 @@ Thresholds (in order; first match wins):
 Any single dimension can move the verdict — three broken tests trip
 `CRITICAL` even with a 0% failure rate. An empty project is `HEALTHY`,
 not `WARNING`.
+
+The thresholds are exported from `health-thresholds.ts` and shared
+with `detectIssues` (below), so `evaluateHealth` and the issue
+detector cannot drift apart.
+
+### `extractPattern(failureMessage, failureType, testName)`
+
+Lives in `pattern-extractor.ts`. Builds a canonical pattern string by
+composing `failureType: firstLine(failureMessage)` (or a fallback
+when one or both are absent), then scrubbing volatile substrings so
+the same underlying defect collapses to one row regardless of
+incidental variation. Scrub rules, applied in order:
+
+| Pattern | Replacement |
+|---|---|
+| ISO timestamps | `<TS>` |
+| UUIDs | `<UUID>` |
+| File:line[:col] refs (10 source extensions) | `<PATH>` |
+| Hex addresses (`0x…`) | `<ADDR>` |
+| URL query strings (base preserved) | `<QUERY>` |
+| Numeric clusters with word boundaries (`\b\d{3,}\b`) | `<N>` |
+
+Whitespace is collapsed to single spaces, the result is truncated to
+200 chars with an ellipsis. Output category comes from a separate
+keyword scan over the pattern + type: `timeout`, `network`,
+`database`, `assertion`, or `unknown`. See [tech-debt.md](../tech-debt.md)
+TD-002 for a known limitation in the numeric scrub regex.
+
+### `assignSeverity({ occurrenceCount, category, lastSeenAt, now? })`
+
+Lives in `severity-assigner.ts`. Stale check first; then numeric
+thresholds:
+
+| Condition | Severity |
+|---|---|
+| `daysSinceLastSeen > 30` | `LOW` (stale — even huge counts age out) |
+| `occurrenceCount ≥ 50` | `CRITICAL` |
+| `occurrenceCount ≥ 25` AND `category ∈ {timeout, network, database}` | `CRITICAL` |
+| `occurrenceCount ≥ 20` | `HIGH` |
+| `occurrenceCount ≥ 5` | `MEDIUM` |
+| otherwise | `LOW` |
+
+The elevated-category branch reflects that infra-class failures
+hitting double-digit recurrence usually indicate an outage or
+regression — they pre-empt to `CRITICAL` earlier than e.g. assertion
+failures. `now` is injectable for deterministic testing.
+
+### `detectIssues({ totalRuns, recentFailureRate, brokenTestCount, flakyTestCount, patterns })`
+
+Lives in `issue-detector.ts`. Consumes the same `HealthInput` as
+`evaluateHealth` plus `FailurePatternSummary[] = { severity,
+occurrenceCount }[]` and returns two arrays of `{ code, message }`.
+`totalRuns === 0` short-circuits to empty arrays.
+
+| Trigger | Code | Bucket |
+|---|---|---|
+| `brokenTestCount ≥ 1` | `BROKEN_TESTS_PRESENT` | warning |
+| `brokenTestCount ≥ 3` | `BROKEN_TESTS_THRESHOLD` | critical |
+| `recentFailureRate > 0.05` | `PASS_RATE_LOW` | warning |
+| `recentFailureRate > 0.20` | `PASS_RATE_CRITICAL` | critical |
+| `flakyTestCount > 5` | `FLAKY_TESTS_MODERATE` | warning |
+| `flakyTestCount > 15` | `FLAKY_TESTS_HIGH` | critical |
+| `pattern.severity === 'HIGH'` (per pattern) | `HIGH_SEVERITY_PATTERN` | warning |
+| `pattern.severity === 'CRITICAL'` (per pattern) | `CRITICAL_SEVERITY_PATTERN` | critical |
+
+Numeric-input triggers are independent — both `BROKEN_TESTS_PRESENT`
+and `BROKEN_TESTS_THRESHOLD` fire at `brokenTestCount=5`. Pattern
+triggers are mutually exclusive: a `CRITICAL` pattern emits only the
+critical item, not also the warning.
+
+`/health` returns both arrays in full. `/overview` exposes the top
+three critical issues as `topCriticalIssues` (no warnings on
+overview — the dashboard surfaces what's broken, not what's
+degrading).
 
 ## The aggregated SQL approach
 
@@ -112,22 +192,43 @@ in Postgres returns one row per distinct test. The window is bounded
 by the `days` parameter (default 30, max 90) so the working set stays
 small.
 
-## MVP limitations
+## Pattern persistence
 
-- **`topFailurePatterns` is always `[]`.** The `failure_patterns`
-  table exists and `PgFailurePatternRepository.listByProject` returns
-  the rows, but no use case writes them yet. Phase 2 will add pattern
-  extraction from failure messages during ingestion. The `/overview`
-  and `/failure-patterns` endpoints are wired so the contract is
-  stable today; only the data is missing.
+Failure patterns are written during ingestion — see
+[ingestion.md](./ingestion.md#failure-pattern-extraction) for the
+pipeline. The write side uses
+`FailurePatternRepository.upsertByPattern`, an atomic
+`INSERT … ON CONFLICT (project_id, pattern) DO UPDATE` that:
+
+- increments `occurrence_count` by 1,
+- advances `last_seen_at` via `GREATEST` (a delayed write with an
+  older timestamp cannot regress it),
+- overwrites `severity` with the caller's value (re-derived from the
+  current batch),
+- leaves `category` and `first_seen_at` untouched on conflict.
+
+Severity on the row reflects the most recent batch, not cumulative
+history — a one-occurrence batch overwrites a previously-set `HIGH`
+back to `LOW`. Acceptable for MVP; the next ingestion that produces
+a larger batch escalates it again. If this churn becomes visible in
+the dashboard, recompute severity from the persisted
+`occurrence_count` post-upsert instead.
+
+## Known limitations
+
 - **No caching.** Every request re-runs the SQL. The aggregate
   approach keeps each query under a few hundred ms on realistic
   volumes — measure before adding a cache layer.
 - **Idempotency.** Duplicate ingestion double-counts in every
-  analytics endpoint. The MVP accepts duplicate `test_runs` rows by
-  design; see [ingestion.md](./ingestion.md#idempotency) for the
-  Phase 2 plan (partial unique index on
+  analytics endpoint *and* double-bumps pattern `occurrence_count`.
+  The MVP accepts duplicate `test_runs` rows by design; see
+  [ingestion.md](./ingestion.md#idempotency) for the Phase 2 plan
+  (partial unique index on
   `(project_id, external_id) WHERE external_id IS NOT NULL`).
+- **Pattern collapse edge case.** The numeric scrub regex requires
+  word boundaries — `30000ms` is left intact while `30000 ms`
+  collapses to `<N> ms`. Tracked as TD-002 in
+  [tech-debt.md](../tech-debt.md).
 
 ## Adding a new analytics endpoint
 
@@ -159,16 +260,20 @@ small.
 
 - **Design spec:**
   `docs/superpowers/specs/2026-06-01-test-failure-intelligence-design.md`
-  - §3 enums (`ReliabilityState`, `ProjectHealthStatus`)
+  - §3 enums (`ReliabilityState`, `ProjectHealthStatus`, `FailureSeverity`)
   - §8 Reliability classifier and health evaluator
-  - §9 Epic 5 scope
+  - §9 Epic 5 + Epic 6 scope
 - **Epic 5 plan:**
   `docs/superpowers/plans/2026-06-07-epic-5-analytics-reliability.md`
   - §6 Use case design
   - §7 Aggregated SQL strategy
   - §8 Health-evaluator thresholds
-  - §13 Port-method rollout order
+- **Epic 6 plan:**
+  `docs/superpowers/plans/2026-06-07-epic-6-health-scoring-failure-intelligence.md`
+  - §4 Pattern extraction & severity assignment design
+  - §5 Issue detection rules
 - **HTTP layer:** [http-layer.md](./http-layer.md)
 - **Ingestion:** [ingestion.md](./ingestion.md)
 - **Data layer:** [data-layer.md](./data-layer.md)
+- **Tech debt:** [../tech-debt.md](../tech-debt.md) (TD-002)
 - **Live OpenAPI spec:** Swagger UI at `/documentation`

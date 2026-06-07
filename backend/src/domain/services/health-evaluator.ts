@@ -1,4 +1,5 @@
 import type { ProjectHealthStatus } from '../enums/project-health-status.js';
+import { HEALTH_THRESHOLDS } from './health-thresholds.js';
 
 export interface HealthInput {
   totalRuns: number;
@@ -10,11 +11,19 @@ export interface HealthInput {
 export function evaluateHealth(input: HealthInput): ProjectHealthStatus {
   if (input.totalRuns === 0) return 'HEALTHY';
 
-  if (input.recentFailureRate > 0.2 || input.brokenTestCount >= 3 || input.flakyTestCount > 15) {
+  if (
+    input.recentFailureRate > HEALTH_THRESHOLDS.recentFailureRate.critical ||
+    input.brokenTestCount >= HEALTH_THRESHOLDS.brokenTestCount.critical ||
+    input.flakyTestCount > HEALTH_THRESHOLDS.flakyTestCount.critical
+  ) {
     return 'CRITICAL';
   }
 
-  if (input.recentFailureRate > 0.05 || input.brokenTestCount >= 1 || input.flakyTestCount > 5) {
+  if (
+    input.recentFailureRate > HEALTH_THRESHOLDS.recentFailureRate.warning ||
+    input.brokenTestCount >= HEALTH_THRESHOLDS.brokenTestCount.warning ||
+    input.flakyTestCount > HEALTH_THRESHOLDS.flakyTestCount.warning
+  ) {
     return 'WARNING';
   }
 

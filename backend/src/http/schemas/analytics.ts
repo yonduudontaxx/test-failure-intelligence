@@ -80,6 +80,15 @@ export const healthQuerySchema = {
   },
 } as const;
 
+export const healthIssueItemSchema = {
+  type: 'object',
+  required: ['code', 'message'],
+  properties: {
+    code: { type: 'string' },
+    message: { type: 'string' },
+  },
+} as const;
+
 export const healthResponseSchema = {
   type: 'object',
   required: [
@@ -90,6 +99,8 @@ export const healthResponseSchema = {
     'brokenTestCount',
     'flakyTestCount',
     'windowDays',
+    'warnings',
+    'criticalIssues',
   ],
   properties: {
     status: { type: 'string', enum: ['HEALTHY', 'WARNING', 'CRITICAL'] },
@@ -99,6 +110,8 @@ export const healthResponseSchema = {
     brokenTestCount: { type: 'integer' },
     flakyTestCount: { type: 'integer' },
     windowDays: { type: 'integer' },
+    warnings: { type: 'array', items: healthIssueItemSchema },
+    criticalIssues: { type: 'array', items: healthIssueItemSchema },
   },
 } as const;
 
@@ -127,6 +140,7 @@ export const overviewResponseSchema = {
     'healthStatus',
     'topFlakyTests',
     'topFailurePatterns',
+    'topCriticalIssues',
   ],
   properties: {
     totalRuns: { type: 'integer' },
@@ -144,6 +158,7 @@ export const overviewResponseSchema = {
       type: 'array',
       items: topFailurePatternItemSchema,
     },
+    topCriticalIssues: { type: 'array', items: healthIssueItemSchema },
   },
 } as const;
 
@@ -223,6 +238,11 @@ export interface HealthQuery {
   days?: number;
 }
 
+export interface HealthIssueItem {
+  code: string;
+  message: string;
+}
+
 export interface HealthResponse {
   status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
   totalRuns: number;
@@ -231,6 +251,8 @@ export interface HealthResponse {
   brokenTestCount: number;
   flakyTestCount: number;
   windowDays: number;
+  warnings: HealthIssueItem[];
+  criticalIssues: HealthIssueItem[];
 }
 
 export interface TopFailurePatternItem {
@@ -249,6 +271,7 @@ export interface OverviewResponse {
   healthStatus: 'HEALTHY' | 'WARNING' | 'CRITICAL';
   topFlakyTests: FlakyTestItem[];
   topFailurePatterns: TopFailurePatternItem[];
+  topCriticalIssues: HealthIssueItem[];
 }
 
 export interface FailurePatternsQuery {
