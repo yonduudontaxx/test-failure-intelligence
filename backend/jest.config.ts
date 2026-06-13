@@ -22,6 +22,7 @@ const config: Config = {
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
   globalSetup: '<rootDir>/tests/integration/global-setup.ts',
   globalTeardown: '<rootDir>/tests/integration/global-teardown.ts',
+  reporters: ['default', ['allure-jest/node', { resultsDir: 'allure-results' }]],
   collectCoverageFrom: ['src/**/*.ts', '!src/index.ts'],
   coverageDirectory: 'coverage',
 };
