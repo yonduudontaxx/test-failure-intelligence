@@ -47,6 +47,18 @@ jobs:
 
       - run: npm run test:integration
 
+      - name: Generate Allure report
+        if: always()
+        run: npx --yes allure-commandline generate allure-results -o allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-backend
+          path: backend/allure-report
+          retention-days: 30
+
       - run: npm run build
 
   frontend:
@@ -71,5 +83,17 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+      - name: Generate Allure report
+        if: always()
+        run: npx --yes allure-commandline generate allure-results -o allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-frontend
+          path: frontend/allure-report
+          retention-days: 30
 
       - run: npm run build
