@@ -47,9 +47,22 @@ jobs:
 
       - run: npm run test:integration
 
+      - name: Generate Allure report
+        if: always()
+        run: npx --yes allure-commandline generate allure-results -o allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-backend
+          path: backend/allure-report
+          retention-days: 30
+
       - run: npm run build
 
   frontend:
+
     name: Frontend
     runs-on: ubuntu-latest
     defaults:
@@ -72,4 +85,84 @@ jobs:
 
       - run: npm test
 
+      - name: Generate Allure report
+        if: always()
+        run: npx --yes allure-commandline generate allure-results -o allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-frontend
+          path: frontend/allure-report
+          retention-days: 30
+
       - run: npm run build
+
+  publish-reports:
+    name: Publish Allure Reports
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: always() && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: allure-report-backend
+          path: site/backend
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: allure-report-frontend
+          path: site/frontend
+
+      - name: Create index page
+        run: |
+          cat > site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>TFI Test Reports</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 600px; margin: 80px auto; padding: 0 24px; }
+              h1 { font-size: 1.5rem; margin-bottom: 8px; }
+              p { color: #666; margin-bottom: 32px; }
+              a { display: block; padding: 16px 20px; border: 1px solid #e2e8f0; border-radius: 8px; text-decoration: none; color: #0f172a; margin-bottom: 12px; }
+              a:hover { background: #f8fafc; }
+              a span { display: block; font-size: 0.85rem; color: #64748b; margin-top: 4px; }
+            </style>
+          </head>
+          <body>
+            <h1>Test Failure Intelligence — Allure Reports</h1>
+            <p>Generated from the latest CI run on <strong>${{ github.ref_name }}</strong>.</p>
+            <a href="backend/">Backend (Jest)
+              <span>Unit and integration test results for the Fastify API</span>
+            </a>
+            <a href="frontend/">Frontend (Vitest)
+              <span>Smoke test results for the Next.js dashboard</span>
+            </a>
+          </body>
+          </html>
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          keep_files: false
+
+      - name: Post report URL to summary
+        run: |
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          {
+            echo "### Allure Test Reports"
+            echo ""
+            echo "| Suite | Link |"
+            echo "|-------|------|"
+            echo "| Backend (Jest) | [$PAGES_URL/backend/]($PAGES_URL/backend/) |"
+            echo "| Frontend (Vitest) | [$PAGES_URL/frontend/]($PAGES_URL/frontend/) |"
+          } >> "$GITHUB_STEP_SUMMARY"
