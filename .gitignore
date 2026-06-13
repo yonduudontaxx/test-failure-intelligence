@@ -37,3 +37,7 @@ docker-compose.override.yml
 
 # Test coverage
 coverage/
+
+# Allure reports
+allure-results/
+allure-report/
