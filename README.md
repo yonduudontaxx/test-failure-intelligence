@@ -1,6 +1,28 @@
 # Test Failure Intelligence
 
-A self-hosted quality engineering platform for teams that need visibility into test suite health. It ingests test results, surfaces flaky tests, tracks failure trends across environments, and exposes execution history — giving engineering teams the data to act on test reliability rather than tolerate it.
+[![CI](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/ci.yml)
+
+A self-hosted quality engineering platform that gives engineering teams visibility into test suite health. It ingests test results from Jest, Vitest, Playwright, and JUnit XML, then surfaces flaky tests, failure trends, environment stability, and execution history — so teams act on test reliability rather than tolerate it.
+
+**Live test reports:** [https://yonduudontaxx.github.io/test-failure-intelligence/](https://yonduudontaxx.github.io/test-failure-intelligence/)
+
+---
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Local Setup](#local-setup)
+- [Running Tests](#running-tests)
+- [Test Reports](#test-reports)
+- [API Documentation](#api-documentation)
+- [Frontend Dashboard](#frontend-dashboard)
+- [CI Integration](#ci-integration)
+- [npm Scripts](#npm-scripts)
+- [Environment Variables](#environment-variables)
+- [Production Deployment](#production-deployment)
+- [Project Structure](#project-structure)
+
+---
 
 ## Prerequisites
 
@@ -8,11 +30,13 @@ A self-hosted quality engineering platform for teams that need visibility into t
 - npm >= 10
 - Docker Desktop or Docker Engine with the Compose plugin
 
+---
+
 ## Local Setup
 
-### Option A: Run services individually
+### Option A — Services individually
 
-This starts only PostgreSQL in Docker and runs the backend and frontend directly on your machine.
+Runs only PostgreSQL in Docker; backend and frontend run directly on your machine.
 
 ```bash
 # 1. Clone and enter the repo
@@ -44,38 +68,38 @@ curl http://localhost:3001/health
 # {"status":"ok","database":"connected","timestamp":"..."}
 ```
 
-### Option B: Run all services with Docker Compose
+Open `http://localhost:3000` for the dashboard.
 
-This builds and runs the entire dev stack — PostgreSQL, backend, and frontend — in containers. Credentials and ports are hardcoded in `docker-compose.dev.yml`; no env var setup is required.
+### Option B — Full Docker Compose stack
+
+Builds and runs PostgreSQL, backend, and frontend together. No env var setup required; credentials are hardcoded in `docker-compose.dev.yml`.
 
 ```bash
 docker compose -f docker-compose.dev.yml up
 ```
 
-The backend logs at `debug` level when started this way.
-
-To stop:
+The backend runs at `http://localhost:3001` and logs at `debug` level. The frontend runs at `http://localhost:3000`.
 
 ```bash
+# Stop services
 docker compose -f docker-compose.dev.yml down
-```
 
-To stop and remove the database volume:
-
-```bash
+# Stop and remove the database volume
 docker compose -f docker-compose.dev.yml down -v
 ```
 
+---
+
 ## Running Tests
 
-The backend has two test layers with different infrastructure needs:
+### Backend
+
+The backend has two test layers:
 
 - **Unit tests** (`tests/unit/`) — pure TypeScript, no database, run in parallel.
-- **Integration tests** (`tests/integration/`) — exercise the real PostgreSQL repositories and Fastify route handlers against a dedicated `tfi_test` database. Run serially (`--runInBand`) to avoid cross-file truncation races on a shared database.
+- **Integration tests** (`tests/integration/`) — exercise real PostgreSQL repositories and Fastify route handlers against a dedicated `tfi_test` database. Run serially (`--runInBand`) to avoid cross-file truncation races.
 
-### One-time test database setup
-
-The integration suite uses a separate `tfi_test` database alongside `tfi_dev`. Create it once per machine after starting the Docker Compose dev Postgres:
+**One-time test database setup** (local only — CI provisions it automatically):
 
 ```bash
 docker compose -f docker-compose.dev.yml up postgres -d
@@ -83,9 +107,7 @@ docker compose -f docker-compose.dev.yml exec postgres \
   psql -U tfi -d postgres -c "CREATE DATABASE tfi_test OWNER tfi"
 ```
 
-The database is created empty; the first `npm run test:integration` run applies all migrations via the suite's `globalSetup`.
-
-### Running the suites
+The first `npm run test:integration` run applies all migrations via the suite's `globalSetup`.
 
 ```bash
 cd backend
@@ -93,24 +115,123 @@ cd backend
 # Unit only — fast (~1s), no DB needed
 npm run test:unit
 
-# Integration only — requires tfi_test, ~5s
+# Integration only — requires tfi_test
 npm run test:integration
 
 # Both, serially
 npm test
 
-# Coverage report (both layers)
+# Coverage report
 npm run test:coverage
 ```
 
-In CI, the workflow provisions an ephemeral `postgres:16-alpine` service container with `tfi_test` pre-created via the image's `POSTGRES_DB` env — no manual step required. See `.github/workflows/ci.yml`.
+### Frontend
+
+```bash
+cd frontend
+npm test
+```
+
+Runs Vitest smoke tests (one renders-without-crashing assertion per page component).
+
+---
+
+## Test Reports
+
+Every push to `main` or `develop` automatically generates an Allure HTML report and publishes it to GitHub Pages:
+
+| Suite | URL |
+|-------|-----|
+| Backend (Jest) | https://yonduudontaxx.github.io/test-failure-intelligence/backend/ |
+| Frontend (Vitest) | https://yonduudontaxx.github.io/test-failure-intelligence/frontend/ |
+
+Reports update within ~2 minutes of each push. Each CI run also uploads the raw reports as downloadable artifacts (30-day retention) — find them on the Actions run page under **Artifacts**.
+
+---
+
+## API Documentation
+
+Swagger UI is available at `http://localhost:3001/documentation` when the backend is running.
+
+### Projects (`/api/v1/projects`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/projects` | Create a project with a unique kebab-case `slug`, a `name`, and optional `description` |
+| `GET` | `/api/v1/projects` | Paginated list of projects, newest first; supports `?page=` and `?limit=` |
+| `GET` | `/api/v1/projects/:projectId` | Fetch a single project by id |
+| `POST` | `/api/v1/projects/:projectId/ingest` | Ingest a test run — JSON body or multipart upload (Playwright, Jest, JUnit XML, or generic JSON) |
+| `GET` | `/api/v1/projects/:projectId/runs` | List test runs, newest first; `?status=SUCCESS\|FAILED\|PARTIAL`, `?page=`, `?limit=` |
+| `GET` | `/api/v1/projects/:projectId/runs/:runId` | Fetch a single test run |
+| `GET` | `/api/v1/projects/:projectId/runs/:runId/cases` | List test cases in a run, ordered by id |
+| `GET` | `/api/v1/projects/:projectId/flaky-tests` | Tests classified `FLAKY` or `BROKEN`; `?days=` (1–90), `?limit=` (1–100) |
+| `GET` | `/api/v1/projects/:projectId/failure-trends` | Daily or weekly pass-rate buckets; `?days=`, `?bucketSize=day\|week` |
+| `GET` | `/api/v1/projects/:projectId/health` | `HEALTHY` / `WARNING` / `CRITICAL` verdict with `warnings` and `criticalIssues`; `?days=` |
+| `GET` | `/api/v1/projects/:projectId/overview` | One-call dashboard payload: counts, pass rate, health status, top flaky tests, top failure patterns |
+| `GET` | `/api/v1/projects/:projectId/failure-patterns` | Failure patterns ordered by occurrence count; `?limit=` (1–100) |
+
+All responses use the envelope `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure.
+
+See [docs/architecture/http-layer.md](docs/architecture/http-layer.md), [docs/architecture/ingestion.md](docs/architecture/ingestion.md), and [docs/architecture/analytics.md](docs/architecture/analytics.md) for full detail.
+
+---
+
+## Frontend Dashboard
+
+Seven pages built on Next.js 15 (App Router) + Tailwind CSS + Recharts:
+
+| Page | Route |
+|------|-------|
+| Projects list | `/` |
+| Project dashboard | `/projects/:id` |
+| Run history | `/projects/:id/runs` |
+| Run detail | `/projects/:id/runs/:runId` |
+| Reliability report (flaky tests) | `/projects/:id/reliability` |
+| Failure trends | `/projects/:id/trends` |
+| Failure pattern explorer | `/projects/:id/patterns` |
+
+```bash
+cd frontend
+npm run dev
+# Open http://localhost:3000
+```
+
+Set `NEXT_PUBLIC_API_URL` before starting if the backend is not at `http://localhost:3001`:
+
+```bash
+NEXT_PUBLIC_API_URL=https://tfi.example.com npm run dev
+```
+
+See [docs/architecture/frontend.md](docs/architecture/frontend.md) for the full architecture guide.
+
+---
+
+## CI Integration
+
+### Ingesting your own test results
+
+Copy `.github/INGEST_TEMPLATE.yml` into your repository's `.github/workflows/` directory. It supports JUnit XML (Jest, Maven, Gradle, Go), Playwright JSON, and Vitest JSON. Set three repository variables to activate ingestion:
+
+| Variable | Description |
+|----------|-------------|
+| `TFI_API_URL` | Base URL of your TFI backend (e.g. `https://tfi.example.com`) |
+| `TFI_PROJECT_ID` | UUID of the TFI project to ingest into |
+| `TFI_DASHBOARD_URL` | Base URL of your TFI frontend (used for the PR comment link) |
+
+Set these under **Settings → Variables → Actions** in your repository.
+
+### Self-dogfooding
+
+This repository ingests its own backend unit test results into a live TFI instance on every push to `main` and `develop`, and posts a dashboard link on every pull request. See `.github/workflows/ingest.yml`.
+
+---
 
 ## npm Scripts
 
 ### Backend (`backend/`)
 
 | Script | Description |
-|---|---|
+|--------|-------------|
 | `npm run dev` | Start the server with live reload via tsx |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm start` | Run the compiled build |
@@ -121,98 +242,52 @@ In CI, the workflow provisions an ephemeral `postgres:16-alpine` service contain
 | `npm run typecheck` | Type-check without emitting |
 | `npm run lint` | Lint `src/` and `tests/` |
 | `npm run lint:fix` | Lint and auto-fix |
-| `npm run format` | Format `src/` and `tests/` with Prettier |
+| `npm run format` | Format with Prettier |
 | `npm run format:check` | Check formatting without writing |
 
 ### Frontend (`frontend/`)
 
 | Script | Description |
-|---|---|
+|--------|-------------|
 | `npm run dev` | Start Next.js dev server with Turbopack |
 | `npm run build` | Build for production |
 | `npm start` | Run the production build |
-| `npm test` | Run Vitest smoke tests once (CI mode) |
+| `npm test` | Run Vitest smoke tests (CI mode) |
 | `npm run typecheck` | Type-check without emitting |
 | `npm run lint` | Lint `src/` |
 | `npm run lint:fix` | Lint and auto-fix |
-| `npm run format` | Format `src/` with Prettier |
+| `npm run format` | Format with Prettier |
 | `npm run format:check` | Check formatting without writing |
+
+---
 
 ## Environment Variables
 
 ### Backend
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string. Format: `postgresql://USER:PASSWORD@HOST:PORT/DATABASE` |
-| `PORT` | No | `3001` | HTTP port the server listens on |
-| `NODE_ENV` | No | `development` | Runtime environment. One of: `development`, `production`, `test` |
-| `LOG_LEVEL` | No | `info` | Log verbosity. One of: `debug`, `info`, `warn`, `error` |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | PostgreSQL connection string: `postgresql://USER:PASSWORD@HOST:PORT/DATABASE` |
+| `PORT` | No | `3001` | HTTP port |
+| `NODE_ENV` | No | `development` | `development`, `production`, or `test` |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
 
-`DATABASE_URL` is required at startup. The server will not start without it.
-
-Copy `backend/.env.example` to `backend/.env` to get started with local defaults.
+`DATABASE_URL` is required at startup. Copy `backend/.env.example` to `backend/.env` to get started locally.
 
 ### Frontend
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001/api/v1` | Base URL for backend API requests. Set this in production to the deployed backend URL. |
+|----------|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001/api/v1` | Backend API base URL. Set this in production to the deployed backend URL. |
 
-## API Documentation
+---
 
-Swagger UI is available at `http://localhost:3001/documentation` when the backend is running. Full request and response schemas for every endpoint are auto-generated there.
+## Production Deployment
 
-### Projects (`/api/v1/projects`)
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/projects` | Create a project with a unique kebab-case `slug`, a `name`, and optional `description` |
-| `GET` | `/api/v1/projects` | Paginated list of projects, newest first; supports `?page=` and `?limit=` |
-| `GET` | `/api/v1/projects/:projectId` | Fetch a single project by id |
-| `POST` | `/api/v1/projects/:projectId/ingest` | Ingest a test run — either a canonical JSON body (`Content-Type: application/json`) or a multipart upload of a Playwright, Jest, JUnit XML, or generic JSON report file |
-| `GET` | `/api/v1/projects/:projectId/runs` | List a project's test runs, newest first; supports `?page=`, `?limit=`, optional `?status=SUCCESS\|FAILED\|PARTIAL` filter |
-| `GET` | `/api/v1/projects/:projectId/runs/:runId` | Fetch a single test run by id |
-| `GET` | `/api/v1/projects/:projectId/runs/:runId/cases` | List the test cases in a run (full case payloads, ordered by id) |
-| `GET` | `/api/v1/projects/:projectId/flaky-tests` | Distinct tests classified `FLAKY` or `BROKEN` over a window; supports `?days=` (1–90, default 30) and `?limit=` (1–100, default 20) |
-| `GET` | `/api/v1/projects/:projectId/failure-trends` | Daily or weekly pass-rate buckets; supports `?days=` (1–90, default 30) and `?bucketSize=day\|week` |
-| `GET` | `/api/v1/projects/:projectId/health` | Aggregate `HEALTHY` / `WARNING` / `CRITICAL` verdict with pass/failure rates, plus `warnings` and `criticalIssues` arrays explaining the verdict; supports `?days=` (1–90, default 30) |
-| `GET` | `/api/v1/projects/:projectId/overview` | One-call dashboard payload: counts, recent pass rate, health status, top flaky tests, top failure patterns, top critical issues |
-| `GET` | `/api/v1/projects/:projectId/failure-patterns` | List recorded failure patterns ordered by occurrence count; supports `?limit=` (1–100, default 50). Patterns are extracted during ingestion (FAILED/ERROR cases with `failureMessage` or `failureType`) with heuristic severity assignment |
-
-All `/api/v1` responses use the standard envelope: `{ "data": ... }` on success or `{ "error": { "code", "message" } }` on failure. See [docs/architecture/http-layer.md](docs/architecture/http-layer.md) for envelope conventions and the error-code table, [docs/architecture/ingestion.md](docs/architecture/ingestion.md) for the ingestion adapter contract and supported source types, and [docs/architecture/analytics.md](docs/architecture/analytics.md) for the reliability classifier, health-evaluator thresholds, and aggregated SQL approach behind the analytics endpoints.
-
-## Frontend Dashboard
-
-The Next.js dashboard consumes the API above and surfaces seven pages: projects list, project dashboard, run history, run detail, reliability report, failure trends, and failure pattern explorer.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:3000` in your browser. The backend must be reachable at `http://localhost:3001` (the default) or at whatever URL you set in `NEXT_PUBLIC_API_URL` before starting the dev server:
-
-```bash
-NEXT_PUBLIC_API_URL=https://tfi.example.com npm run dev
-```
-
-Run the smoke tests (Vitest + React Testing Library, one renders-without-crashing test per page):
-
-```bash
-cd frontend
-npm test
-```
-
-See [docs/architecture/frontend.md](docs/architecture/frontend.md) for the page inventory, API client architecture, RSC-vs-client-component decisions, URL-as-state convention, error boundaries, and a checklist for adding new pages.
-
-## Production Docker Compose
-
-`docker-compose.yml` is for production deployments. It requires the following environment variables to be set before running:
+`docker-compose.yml` runs the full production stack. Set the following before running:
 
 | Variable | Required | Description |
-|---|---|---|
+|----------|----------|-------------|
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
 | `DATABASE_URL` | Yes | Full PostgreSQL connection string for the backend |
 | `POSTGRES_DB` | No | Database name (default: `tfi`) |
@@ -222,24 +297,24 @@ See [docs/architecture/frontend.md](docs/architecture/frontend.md) for the page 
 | `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001/api/v1`) |
 | `LOG_LEVEL` | No | Backend log level (default: `info`) |
 
+```bash
+docker compose up -d
+```
+
+---
+
 ## Project Structure
 
 ```
 test-failure-intelligence/
 ├── backend/
-│   ├── migrations/          # Database migrations (upcoming)
+│   ├── migrations/          # PostgreSQL migrations (node-pg-migrate)
 │   ├── src/
-│   │   ├── database/
-│   │   │   └── client.ts    # PostgreSQL connection pool
-│   │   ├── domain/          # Domain layer (entities, ports, services)
-│   │   ├── http/
-│   │   │   ├── middleware/
-│   │   │   ├── plugins/
-│   │   │   │   └── swagger.ts
-│   │   │   └── routes/
-│   │   │       └── health.ts
+│   │   ├── database/        # Connection pool
+│   │   ├── domain/          # Entities, ports, domain services (zero external deps)
+│   │   ├── http/            # Fastify routes, plugins, middleware
 │   │   ├── infrastructure/  # Repository and ingestion adapters
-│   │   ├── use-cases/
+│   │   ├── use-cases/       # Application use cases
 │   │   ├── app.ts           # Fastify app factory
 │   │   ├── config.ts        # Environment variable validation
 │   │   └── index.ts         # Server entry point
@@ -251,11 +326,14 @@ test-failure-intelligence/
 │   └── src/
 │       ├── app/             # Next.js App Router pages
 │       ├── components/      # UI, chart, and table components
-│       └── lib/
-│           └── api-client.ts
+│       └── lib/             # API client and type definitions
 ├── .github/
+│   ├── INGEST_TEMPLATE.yml  # Reusable CI ingestion template
 │   └── workflows/
-│       └── ci.yml
+│       ├── ci.yml           # Lint, typecheck, test, build, Allure report deploy
+│       └── ingest.yml       # Self-dogfooding ingestion workflow
+├── docs/
+│   └── architecture/        # HTTP layer, ingestion, analytics, frontend guides
 ├── docker-compose.dev.yml   # Local development stack
 └── docker-compose.yml       # Production stack
 ```
