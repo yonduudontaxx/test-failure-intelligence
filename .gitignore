@@ -41,3 +41,10 @@ coverage/
 # Allure reports
 allure-results/
 allure-report/
+
+# Personal Claude Code files (private, not shared)
+CLAUDE.local.md
+.claude/settings.local.json
+
+# OMC tooling artifacts
+.omc/
