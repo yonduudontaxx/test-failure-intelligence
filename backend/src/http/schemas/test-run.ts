@@ -193,7 +193,3 @@ export interface CaseResponse {
   retryCount: number;
   metadata: Record<string, unknown>;
 }
-
-export interface RunCasesResponse {
-  items: CaseResponse[];
-}
