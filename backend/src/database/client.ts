@@ -1,13 +1,15 @@
 import type { Pool, PoolClient } from 'pg';
 
-export async function testConnection(pool: Pool): Promise<boolean> {
+type ErrorLogger = { error: (obj: object, msg: string) => void };
+
+export async function testConnection(pool: Pool, logger?: ErrorLogger): Promise<boolean> {
   let client: PoolClient | undefined;
   try {
     client = await pool.connect();
     await client.query('SELECT 1');
     return true;
   } catch (err) {
-    console.error('Database connection test failed:', err);
+    logger?.error({ err }, 'Database connection test failed');
     return false;
   } finally {
     client?.release();

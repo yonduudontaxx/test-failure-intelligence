@@ -10,5 +10,3 @@ export type FailurePattern = Readonly<{
   lastSeenAt: Date;
   occurrenceCount: number;
 }>;
-
-export type NewFailurePattern = Omit<FailurePattern, 'id'>;
