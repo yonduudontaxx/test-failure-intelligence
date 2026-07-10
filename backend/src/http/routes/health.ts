@@ -20,7 +20,7 @@ export default async function healthRoutes(fastify: FastifyInstance): Promise<vo
       },
     },
     async () => {
-      const connected = await testConnection(fastify.pool);
+      const connected = await testConnection(fastify.pool, fastify.log);
       return {
         status: 'ok' as const,
         database: connected ? ('connected' as const) : ('disconnected' as const),
