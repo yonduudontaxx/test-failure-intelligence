@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in */backend/*) d=\"${f%%/backend/*}/backend\";; */frontend/*) d=\"${f%%/frontend/*}/frontend\";; *) exit 0;; esac; (cd \"$d\" && npx --no-install prettier --write --ignore-unknown \"$f\"); } 2>/dev/null || true",
+            "statusMessage": "Formatting with Prettier..."
+          }
+        ]
+      }
+    ]
+  }
+}
