@@ -1,7 +1,8 @@
 import type { Pool, PoolClient } from 'pg';
-import type { FastifyBaseLogger } from 'fastify';
 
-export async function testConnection(pool: Pool, logger?: FastifyBaseLogger): Promise<boolean> {
+type ErrorLogger = { error: (obj: object, msg: string) => void };
+
+export async function testConnection(pool: Pool, logger?: ErrorLogger): Promise<boolean> {
   let client: PoolClient | undefined;
   try {
     client = await pool.connect();
