@@ -107,12 +107,12 @@ docker compose -f docker-compose.dev.yml exec postgres \
   psql -U tfi -d postgres -c "CREATE DATABASE tfi_test OWNER tfi"
 ```
 
-The first `npm run test:integration` run applies all migrations via the suite's `globalSetup`.
+Every Jest run (unit or integration) applies pending migrations to `tfi_test` through `globalSetup`, which refuses to run unless `TEST_DATABASE_URL` points at a database whose name ends in `_test`.
 
 ```bash
 cd backend
 
-# Unit only — fast (~1s), no DB needed
+# Unit only — fast; globalSetup still needs tfi_test
 npm run test:unit
 
 # Integration only — requires tfi_test
@@ -138,14 +138,14 @@ Runs Vitest smoke tests (one renders-without-crashing assertion per page compone
 
 ## Test Reports
 
-Every push to `main` or `develop` automatically generates an Allure HTML report and publishes it to GitHub Pages:
+CI runs on `main` (on push, daily at 04:00 UTC, or manually) generate Allure HTML reports and publish them to GitHub Pages:
 
 | Suite | URL |
 |-------|-----|
 | Backend (Jest) | https://yonduudontaxx.github.io/test-failure-intelligence/backend/ |
 | Frontend (Vitest) | https://yonduudontaxx.github.io/test-failure-intelligence/frontend/ |
 
-Reports update within ~2 minutes of each push. Each CI run also uploads the raw reports as downloadable artifacts (30-day retention) — find them on the Actions run page under **Artifacts**.
+Reports update within ~2 minutes of each run. Each report's **Environment** panel shows the trigger, run id, commit, branch and Node version; the backend report also shows the runtime `NODE_ENV`, the `TEST_DATABASE_URL` database, and how many unit and integration tests passed. Every CI run, on any branch, also uploads the reports as downloadable artifacts (30-day retention) — find them on the Actions run page under **Artifacts**.
 
 ---
 
@@ -220,9 +220,21 @@ Copy `.github/INGEST_TEMPLATE.yml` into your repository's `.github/workflows/` d
 
 Set these under **Settings → Variables → Actions** in your repository.
 
+### This repository's CI
+
+`.github/workflows/ci.yml` runs lint, typecheck, build and tests for the backend and frontend:
+
+- on every push and on pull requests to `main` or `develop`
+- daily at 04:00 UTC
+- manually, from **Actions → CI → Run workflow** (or `gh workflow run ci.yml`)
+
+Before the backend tests, CI loads the built `config` module and fails unless it resolves `NODE_ENV` to `test`, and fails unless `TEST_DATABASE_URL` points at `tfi_test`. After the tests, it fails if the unit or integration suite ran zero tests.
+
+Only pull-request runs cancel an in-progress run for the same ref. A queued run is still replaced when a newer run for the same ref is queued, so a scheduled run can be superseded by a push. GitHub may delay scheduled runs, and disables them on public repositories after 60 days without repository activity.
+
 ### Self-dogfooding
 
-This repository ingests its own backend unit test results into a live TFI instance on every push to `main` and `develop`, and posts a dashboard link on every pull request. See `.github/workflows/ingest.yml`.
+`.github/workflows/ingest.yml` runs the backend unit tests on pushes to `main` and `develop` and on pull requests, and ingests the results into a TFI instance once `TFI_API_URL` and `TFI_PROJECT_ID` are set as repository variables. `TFI_DASHBOARD_URL` is used for the dashboard link that is posted on pull requests when ingestion runs. Without those variables the tests still run and ingestion is skipped.
 
 ---
 
@@ -271,6 +283,7 @@ This repository ingests its own backend unit test results into a live TFI instan
 | `PORT` | No | `3001` | HTTP port |
 | `NODE_ENV` | No | `development` | `development`, `production`, or `test` |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
+| `TEST_DATABASE_URL` | No | `postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test` | Database migrated by every Jest run's `globalSetup` (unit and integration) and used by the integration tests. Must end in `_test` |
 
 `DATABASE_URL` is required at startup. Copy `backend/.env.example` to `backend/.env` to get started locally.
 
@@ -278,7 +291,7 @@ This repository ingests its own backend unit test results into a live TFI instan
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001/api/v1` | Backend API base URL. Set this in production to the deployed backend URL. |
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend API base URL. Set this in production to the deployed backend URL. |
 
 ---
 
@@ -294,7 +307,7 @@ This repository ingests its own backend unit test results into a live TFI instan
 | `POSTGRES_USER` | No | Database user (default: `tfi`) |
 | `BACKEND_PORT` | No | Host port for the backend (default: `3001`) |
 | `FRONTEND_PORT` | No | Host port for the frontend (default: `3000`) |
-| `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001/api/v1`) |
+| `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001`) |
 | `LOG_LEVEL` | No | Backend log level (default: `info`) |
 
 ```bash

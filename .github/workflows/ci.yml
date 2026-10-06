@@ -58,47 +58,58 @@ jobs:
         id: runtime_flags
         run: |
           node --input-type=module -e "
-            const { config } = await import('./dist/config.js');
-            const db = config.databaseUrl.replace(/^[a-z]+:\/\/([^@]*@)?/, '');
-            console.log('config.nodeEnv=' + config.nodeEnv);
-            console.log('config.database=' + db);
             const fs = await import('node:fs');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'node_env=' + config.nodeEnv + '\n' + 'database=' + db + '\n');
+            const { config } = await import('./dist/config.js');
+            const testDb = new URL(process.env.TEST_DATABASE_URL);
+            const database = testDb.host + testDb.pathname;
+            console.log('config.nodeEnv=' + config.nodeEnv);
+            console.log('TEST_DATABASE_URL database=' + database);
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'node_env=' + config.nodeEnv + '\n' + 'database=' + database + '\n');
             if (config.nodeEnv !== 'test') { console.log('::error::config resolved NODE_ENV to ' + config.nodeEnv + ', expected test'); process.exit(1); }
-            if (!db.endsWith('/tfi_test')) { console.log('::error::config database is ' + db + ', expected tfi_test'); process.exit(1); }
+            if (testDb.pathname !== '/tfi_test') { console.log('::error::TEST_DATABASE_URL points at ' + database + ', expected tfi_test'); process.exit(1); }
           "
 
-      - run: npm run test:unit
+      - run: npm run test:unit -- --json --outputFile=unit-results.json
 
-      - run: npm run test:integration
+      - run: npm run test:integration -- --json --outputFile=integration-results.json
 
-      - name: Verify integration tests used tfi_test
-        id: test_db
+      - name: Verify test suites ran
+        id: test_counts
         run: |
           node --input-type=module -e "
-            const { default: pg } = await import('pg');
-            const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
-            await client.connect();
-            const { rows } = await client.query('select current_database() as db, count(*)::int as n from pgmigrations');
-            await client.end();
-            console.log('database=' + rows[0].db + ' migrations=' + rows[0].n);
             const fs = await import('node:fs');
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'migrations=' + rows[0].n + '\n');
-            if (rows[0].db !== 'tfi_test' || rows[0].n < 1) { console.log('::error::no migrations applied to tfi_test'); process.exit(1); }
+            let failed = false;
+            for (const suite of ['unit', 'integration']) {
+              const r = JSON.parse(fs.readFileSync(suite + '-results.json', 'utf8'));
+              console.log(suite + ': ' + r.numPassedTests + ' passed of ' + r.numTotalTests + ' tests');
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, suite + '=' + r.numPassedTests + '/' + r.numTotalTests + '\n');
+              if (r.numPassedTests < 1 || r.numFailedTests > 0) { console.log('::error::' + suite + ' suite passed ' + r.numPassedTests + ' of ' + r.numTotalTests + ' tests'); failed = true; }
+            }
+            if (failed) process.exit(1);
           "
 
       - name: Write Allure environment
         if: always()
+        env:
+          RUN_TRIGGER: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          RT_NODE_ENV: ${{ steps.runtime_flags.outputs.node_env || 'not captured' }}
+          RT_DATABASE: ${{ steps.runtime_flags.outputs.database || 'not captured' }}
+          RT_UNIT: ${{ steps.test_counts.outputs.unit || 'not captured' }}
+          RT_INTEGRATION: ${{ steps.test_counts.outputs.integration || 'not captured' }}
         run: |
           mkdir -p allure-results
           cat > allure-results/environment.properties <<EOF
-          Run.Trigger=${{ github.event_name }}
-          Run.Id=${{ github.run_id }}
-          Commit=${{ github.sha }}
-          Branch=${{ github.ref_name }}
-          Runtime.NODE_ENV=${{ steps.runtime_flags.outputs.node_env || 'not captured' }}
-          Runtime.Database=${{ steps.runtime_flags.outputs.database || 'not captured' }}
-          Runtime.Migrations=${{ steps.test_db.outputs.migrations || 'not captured' }}
+          Run.Trigger=$RUN_TRIGGER
+          Run.Id=$RUN_ID
+          Commit=$COMMIT
+          Branch=$BRANCH
+          Runtime.NODE_ENV=$RT_NODE_ENV
+          Runtime.TestDatabase=$RT_DATABASE
+          Tests.Unit.Passed=$RT_UNIT
+          Tests.Integration.Passed=$RT_INTEGRATION
           Runtime.Node=$(node -v)
           EOF
           cat allure-results/environment.properties
@@ -141,13 +152,18 @@ jobs:
 
       - name: Write Allure environment
         if: always()
+        env:
+          RUN_TRIGGER: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           mkdir -p allure-results
           cat > allure-results/environment.properties <<EOF
-          Run.Trigger=${{ github.event_name }}
-          Run.Id=${{ github.run_id }}
-          Commit=${{ github.sha }}
-          Branch=${{ github.ref_name }}
+          Run.Trigger=$RUN_TRIGGER
+          Run.Id=$RUN_ID
+          Commit=$COMMIT
+          Branch=$BRANCH
           Runtime.Node=$(node -v)
           EOF
           cat allure-results/environment.properties

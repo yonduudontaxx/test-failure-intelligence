@@ -68,7 +68,7 @@ jobs:
             -F "pipelineName=${{ github.workflow }}" \
             -F "buildNumber=${{ github.run_number }}" \
             -F "externalId=${{ github.run_id }}")
-          run_id=$(echo "$response" | jq -r '.data.runId')
+          run_id=$(echo "$response" | jq -er '.data.runId')
           echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
           url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
           {
@@ -87,7 +87,7 @@ jobs:
         with:
           script: |
             const url = `${process.env.TFI_DASHBOARD_URL}/projects/${process.env.TFI_PROJECT_ID}/runs/${process.env.RUN_ID}`;
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
