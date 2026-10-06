@@ -1,1 +1,1 @@
-[{"values":["workflow_dispatch"],"name":"Run.Trigger"},{"values":["37481664828"],"name":"Run.Id"},{"values":["a0cfc35a90b2dbb39e2c1598c2931278f8e4b4e2"],"name":"Commit"},{"values":["main"],"name":"Branch"},{"values":["v22.23.3"],"name":"Runtime.Node"}]
+[{"values":["push"],"name":"Run.Trigger"},{"values":["37482610682"],"name":"Run.Id"},{"values":["d4279c3807bf0e68cd4e30407f500862cbfabf7d"],"name":"Commit"},{"values":["main"],"name":"Branch"},{"values":["v22.23.3"],"name":"Runtime.Node"}]
