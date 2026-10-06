@@ -20,7 +20,7 @@ jobs:
     name: Backend
     runs-on: ubuntu-24.04
     outputs:
-      tests_ran: ${{ steps.unit.outcome != 'skipped' }}
+      tests_ran: ${{ steps.unit.outcome == 'success' || steps.unit.outcome == 'failure' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -102,7 +102,8 @@ jobs:
               const r = JSON.parse(fs.readFileSync(file, 'utf8'));
               console.log(suite + ': ' + r.numPassedTests + ' passed of ' + r.numTotalTests + ' tests');
               fs.appendFileSync(process.env.GITHUB_OUTPUT, suite + '=' + r.numPassedTests + '/' + r.numTotalTests + '\n');
-              if (r.numTotalTests < 1) { console.log('::error::' + suite + ' suite ran zero tests'); failed = true; }
+              if (r.numTotalTests < 1) { console.log('::error::' + suite + ' suite has zero tests'); failed = true; }
+              else if (r.numPassedTests < 1) { console.log('::error::' + suite + ' suite passed zero of ' + r.numTotalTests + ' tests'); failed = true; }
             }
             if (failed) process.exit(1);
           "
@@ -149,7 +150,7 @@ jobs:
     name: Frontend
     runs-on: ubuntu-24.04
     outputs:
-      tests_ran: ${{ steps.test.outcome != 'skipped' }}
+      tests_ran: ${{ steps.test.outcome == 'success' || steps.test.outcome == 'failure' }}
     defaults:
       run:
         working-directory: frontend

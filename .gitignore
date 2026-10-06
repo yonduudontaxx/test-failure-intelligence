@@ -43,7 +43,8 @@ allure-results/
 allure-report/
 
 # Jest JSON results written by CI
-*-results.json
+backend/unit-results.json
+backend/integration-results.json
 
 # Personal Claude Code files (private, not shared)
 CLAUDE.local.md
