@@ -41,3 +41,13 @@ coverage/
 # Allure reports
 allure-results/
 allure-report/
+
+# Jest JSON results written by CI
+*-results.json
+
+# Personal Claude Code files (private, not shared)
+CLAUDE.local.md
+.claude/settings.local.json
+
+# OMC tooling artifacts
+.omc/

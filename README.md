@@ -228,7 +228,7 @@ Set these under **Settings → Variables → Actions** in your repository.
 - daily at 04:00 UTC
 - manually, from **Actions → CI → Run workflow** (or `gh workflow run ci.yml`)
 
-Before the backend tests, CI loads the built `config` module and fails unless it resolves `NODE_ENV` to `test`, and fails unless `TEST_DATABASE_URL` points at `tfi_test`. After the tests, it fails if the unit or integration suite ran zero tests.
+Before the backend tests, CI loads the built `config` module and fails unless it resolves `NODE_ENV` to `test` (a sanity check that the job's own `NODE_ENV` reaches the built config), and fails unless `TEST_DATABASE_URL` points at `tfi_test`. After the tests, it fails if the unit or integration suite ran zero tests, or if a test step succeeded without writing its results file. A separate **Frontend image** job builds the production frontend image with a placeholder `NEXT_PUBLIC_API_URL` and fails unless that URL appears in the browser bundle. Pages is only updated when both suites actually ran, so a build or lint failure on `main` keeps the previous report.
 
 Only pull-request runs cancel an in-progress run for the same ref. A queued run is still replaced when a newer run for the same ref is queued, so a scheduled run can be superseded by a push. GitHub may delay scheduled runs, and disables them on public repositories after 60 days without repository activity.
 
@@ -307,7 +307,7 @@ Only pull-request runs cancel an in-progress run for the same ref. A queued run 
 | `POSTGRES_USER` | No | Database user (default: `tfi`) |
 | `BACKEND_PORT` | No | Host port for the backend (default: `3001`) |
 | `FRONTEND_PORT` | No | Host port for the frontend (default: `3000`) |
-| `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001`) |
+| `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001`). Next.js inlines it at build time, so run `docker compose build frontend` after changing it |
 | `LOG_LEVEL` | No | Backend log level (default: `info`) |
 
 ```bash
