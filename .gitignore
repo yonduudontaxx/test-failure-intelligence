@@ -46,9 +46,7 @@ allure-report/
 backend/unit-results.json
 backend/integration-results.json
 
-# Personal Claude Code files (private, not shared)
+# Local editor and tooling files
 CLAUDE.local.md
 .claude/settings.local.json
-
-# OMC tooling artifacts
 .omc/
