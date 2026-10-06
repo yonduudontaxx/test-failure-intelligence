@@ -81,9 +81,9 @@ jobs:
             let failed = false;
             for (const suite of ['unit', 'integration']) {
               const r = JSON.parse(fs.readFileSync(suite + '-results.json', 'utf8'));
-              console.log(suite + ': ' + r.numTotalTests + ' tests, ' + r.numFailedTests + ' failed');
+              console.log(suite + ': ' + r.numPassedTests + ' passed of ' + r.numTotalTests + ' tests');
               fs.appendFileSync(process.env.GITHUB_OUTPUT, suite + '=' + r.numPassedTests + '/' + r.numTotalTests + '\n');
-              if (r.numTotalTests < 1 || r.numFailedTests > 0) { console.log('::error::' + suite + ' suite ran ' + r.numTotalTests + ' tests with ' + r.numFailedTests + ' failures'); failed = true; }
+              if (r.numPassedTests < 1 || r.numFailedTests > 0) { console.log('::error::' + suite + ' suite passed ' + r.numPassedTests + ' of ' + r.numTotalTests + ' tests'); failed = true; }
             }
             if (failed) process.exit(1);
           "
@@ -93,7 +93,7 @@ jobs:
         env:
           RUN_TRIGGER: ${{ github.event_name }}
           RUN_ID: ${{ github.run_id }}
-          COMMIT: ${{ github.sha }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
           RT_NODE_ENV: ${{ steps.runtime_flags.outputs.node_env || 'not captured' }}
           RT_DATABASE: ${{ steps.runtime_flags.outputs.database || 'not captured' }}
@@ -155,7 +155,7 @@ jobs:
         env:
           RUN_TRIGGER: ${{ github.event_name }}
           RUN_ID: ${{ github.run_id }}
-          COMMIT: ${{ github.sha }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           mkdir -p allure-results
