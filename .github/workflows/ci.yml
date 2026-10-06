@@ -12,10 +12,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      tests_ran: ${{ steps.unit.outcome == 'success' || steps.unit.outcome == 'failure' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -69,21 +74,36 @@ jobs:
             if (testDb.pathname !== '/tfi_test') { console.log('::error::TEST_DATABASE_URL points at ' + database + ', expected tfi_test'); process.exit(1); }
           "
 
-      - run: npm run test:unit -- --json --outputFile=unit-results.json
+      - id: unit
+        run: npm run test:unit -- --json --outputFile=unit-results.json
 
-      - run: npm run test:integration -- --json --outputFile=integration-results.json
+      - id: integration
+        run: npm run test:integration -- --json --outputFile=integration-results.json
 
       - name: Verify test suites ran
         id: test_counts
+        if: always()
+        env:
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          INTEGRATION_OUTCOME: ${{ steps.integration.outcome }}
         run: |
           node --input-type=module -e "
             const fs = await import('node:fs');
+            const outcomes = { unit: process.env.UNIT_OUTCOME, integration: process.env.INTEGRATION_OUTCOME };
             let failed = false;
             for (const suite of ['unit', 'integration']) {
-              const r = JSON.parse(fs.readFileSync(suite + '-results.json', 'utf8'));
+              const file = suite + '-results.json';
+              if (!fs.existsSync(file)) {
+                console.log(suite + ': no results file (step ' + outcomes[suite] + ')');
+                fs.appendFileSync(process.env.GITHUB_OUTPUT, suite + '=not run (' + outcomes[suite] + ')\n');
+                if (outcomes[suite] === 'success') { console.log('::error::' + suite + ' step succeeded but wrote no ' + file); failed = true; }
+                continue;
+              }
+              const r = JSON.parse(fs.readFileSync(file, 'utf8'));
               console.log(suite + ': ' + r.numPassedTests + ' passed of ' + r.numTotalTests + ' tests');
               fs.appendFileSync(process.env.GITHUB_OUTPUT, suite + '=' + r.numPassedTests + '/' + r.numTotalTests + '\n');
-              if (r.numPassedTests < 1 || r.numFailedTests > 0) { console.log('::error::' + suite + ' suite passed ' + r.numPassedTests + ' of ' + r.numTotalTests + ' tests'); failed = true; }
+              if (r.numTotalTests < 1) { console.log('::error::' + suite + ' suite has zero tests'); failed = true; }
+              else if (r.numPassedTests < 1) { console.log('::error::' + suite + ' suite passed zero of ' + r.numTotalTests + ' tests'); failed = true; }
             }
             if (failed) process.exit(1);
           "
@@ -127,9 +147,10 @@ jobs:
           retention-days: 30
 
   frontend:
-
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      tests_ran: ${{ steps.test.outcome == 'success' || steps.test.outcome == 'failure' }}
     defaults:
       run:
         working-directory: frontend
@@ -148,7 +169,8 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm test
+      - id: test
+        run: npm test
 
       - name: Write Allure environment
         if: always()
@@ -182,11 +204,26 @@ jobs:
 
       - run: npm run build
 
+  frontend-image:
+    name: Frontend image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build production image with a sentinel API URL
+        run: docker build -f docker/frontend.Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://api.ci-sentinel.invalid -t tfi-frontend:ci frontend
+
+      - name: Verify the API URL is inlined in the browser bundle
+        run: |
+          hits=$(docker run --rm --entrypoint sh tfi-frontend:ci -c 'grep -rl "api.ci-sentinel.invalid" .next/static | wc -l')
+          echo "bundle files containing the sentinel URL: $hits"
+          if [ "$hits" -lt 1 ]; then echo "::error::NEXT_PUBLIC_API_URL build arg did not reach the browser bundle"; exit 1; fi
+
   publish-reports:
     name: Publish Allure Reports
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend, frontend]
-    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.backend.outputs.tests_ran == 'true' && needs.frontend.outputs.tests_ran == 'true'
     permissions:
       contents: write
     steps:

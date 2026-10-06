@@ -41,3 +41,12 @@ coverage/
 # Allure reports
 allure-results/
 allure-report/
+
+# Jest JSON results written by CI
+backend/unit-results.json
+backend/integration-results.json
+
+# Local editor and tooling files
+CLAUDE.local.md
+.claude/settings.local.json
+.omc/

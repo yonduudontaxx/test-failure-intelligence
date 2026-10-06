@@ -13,7 +13,7 @@ on:
 jobs:
   ingest:
     name: Ingest Test Results
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
@@ -57,20 +57,29 @@ jobs:
       # Set these under Settings → Variables to activate ingestion.
       - name: Ingest test results into TFI
         if: always() && vars.TFI_API_URL != '' && vars.TFI_PROJECT_ID != ''
+        env:
+          TFI_API_URL: ${{ vars.TFI_API_URL }}
+          TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+          TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          PIPELINE_NAME: ${{ github.workflow }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          EXTERNAL_ID: ${{ github.run_id }}
         run: |
           response=$(curl --fail-with-body -sS -X POST \
-            "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+            "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
             -F "file=@backend/jest-results.xml" \
             -F "format=junit-xml" \
-            -F "branch=${{ github.ref_name }}" \
-            -F "commitSha=${{ github.sha }}" \
+            -F "branch=${BRANCH}" \
+            -F "commitSha=${COMMIT_SHA}" \
             -F "environment=ci" \
-            -F "pipelineName=${{ github.workflow }}" \
-            -F "buildNumber=${{ github.run_number }}" \
-            -F "externalId=${{ github.run_id }}")
+            -F "pipelineName=${PIPELINE_NAME}" \
+            -F "buildNumber=${BUILD_NUMBER}" \
+            -F "externalId=${EXTERNAL_ID}")
           run_id=$(echo "$response" | jq -er '.data.runId')
-          echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-          url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+          echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+          url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
           {
             echo "### Test Failure Intelligence"
             echo ""
@@ -78,7 +87,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment dashboard link on PR
-        if: always() && github.event_name == 'pull_request' && env.TFI_RUN_ID != ''
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && env.TFI_RUN_ID != ''
         uses: actions/github-script@v8
         env:
           TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
