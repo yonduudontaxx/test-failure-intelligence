@@ -38,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
@@ -78,8 +78,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment dashboard link on PR
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v5
+        if: always() && github.event_name == 'pull_request' && env.TFI_RUN_ID != ''
+        uses: actions/github-script@v8
         env:
           TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
           TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}

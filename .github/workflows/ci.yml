@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
@@ -24,7 +31,9 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
+      NODE_ENV: test
       DATABASE_URL: postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test
+      TEST_DATABASE_URL: postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test
     defaults:
       run:
         working-directory: backend
@@ -43,9 +52,56 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm run build
+
+      - name: Verify runtime flags
+        id: runtime_flags
+        run: |
+          node --input-type=module -e "
+            const { config } = await import('./dist/config.js');
+            const db = config.databaseUrl.replace(/^[a-z]+:\/\/([^@]*@)?/, '');
+            console.log('config.nodeEnv=' + config.nodeEnv);
+            console.log('config.database=' + db);
+            const fs = await import('node:fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'node_env=' + config.nodeEnv + '\n' + 'database=' + db + '\n');
+            if (config.nodeEnv !== 'test') { console.log('::error::config resolved NODE_ENV to ' + config.nodeEnv + ', expected test'); process.exit(1); }
+            if (!db.endsWith('/tfi_test')) { console.log('::error::config database is ' + db + ', expected tfi_test'); process.exit(1); }
+          "
+
       - run: npm run test:unit
 
       - run: npm run test:integration
+
+      - name: Verify integration tests used tfi_test
+        id: test_db
+        run: |
+          node --input-type=module -e "
+            const { default: pg } = await import('pg');
+            const client = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+            await client.connect();
+            const { rows } = await client.query('select current_database() as db, count(*)::int as n from pgmigrations');
+            await client.end();
+            console.log('database=' + rows[0].db + ' migrations=' + rows[0].n);
+            const fs = await import('node:fs');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'migrations=' + rows[0].n + '\n');
+            if (rows[0].db !== 'tfi_test' || rows[0].n < 1) { console.log('::error::no migrations applied to tfi_test'); process.exit(1); }
+          "
+
+      - name: Write Allure environment
+        if: always()
+        run: |
+          mkdir -p allure-results
+          cat > allure-results/environment.properties <<EOF
+          Run.Trigger=${{ github.event_name }}
+          Run.Id=${{ github.run_id }}
+          Commit=${{ github.sha }}
+          Branch=${{ github.ref_name }}
+          Runtime.NODE_ENV=${{ steps.runtime_flags.outputs.node_env || 'not captured' }}
+          Runtime.Database=${{ steps.runtime_flags.outputs.database || 'not captured' }}
+          Runtime.Migrations=${{ steps.test_db.outputs.migrations || 'not captured' }}
+          Runtime.Node=$(node -v)
+          EOF
+          cat allure-results/environment.properties
 
       - name: Generate Allure report
         if: always()
@@ -53,13 +109,11 @@ jobs:
 
       - name: Upload Allure report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: allure-report-backend
           path: backend/allure-report
           retention-days: 30
-
-      - run: npm run build
 
   frontend:
 
@@ -85,13 +139,26 @@ jobs:
 
       - run: npm test
 
+      - name: Write Allure environment
+        if: always()
+        run: |
+          mkdir -p allure-results
+          cat > allure-results/environment.properties <<EOF
+          Run.Trigger=${{ github.event_name }}
+          Run.Id=${{ github.run_id }}
+          Commit=${{ github.sha }}
+          Branch=${{ github.ref_name }}
+          Runtime.Node=$(node -v)
+          EOF
+          cat allure-results/environment.properties
+
       - name: Generate Allure report
         if: always()
         run: npx --yes allure-commandline generate allure-results -o allure-report --clean
 
       - name: Upload Allure report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: allure-report-frontend
           path: frontend/allure-report
@@ -103,16 +170,16 @@ jobs:
     name: Publish Allure Reports
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    if: always() && github.event_name == 'push'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: allure-report-backend
           path: site/backend
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: allure-report-frontend
           path: site/frontend
