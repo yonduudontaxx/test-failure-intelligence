@@ -138,7 +138,7 @@ Runs Vitest smoke tests (one renders-without-crashing assertion per page compone
 
 ## Test Reports
 
-CI runs on `main` (on push, daily at 04:00 UTC, or manually) generate Allure HTML reports and publish them to GitHub Pages:
+CI runs on `main` (on push, daily at 04:23 UTC, or manually) generate Allure HTML reports and publish them to GitHub Pages:
 
 | Suite | URL |
 |-------|-----|
@@ -225,7 +225,7 @@ Set these under **Settings → Variables → Actions** in your repository.
 `.github/workflows/ci.yml` runs lint, typecheck, build and tests for the backend and frontend:
 
 - on every push and on pull requests to `main` or `develop`
-- daily at 04:00 UTC
+- daily at 04:23 UTC
 - manually, from **Actions → CI → Run workflow** (or `gh workflow run ci.yml`)
 
 Before the backend tests, CI loads the built `config` module and fails unless it resolves `NODE_ENV` to `test` (a sanity check that the job's own `NODE_ENV` reaches the built config), and fails unless `TEST_DATABASE_URL` points at `tfi_test`. After the tests, it fails if the unit or integration suite has zero tests or passed none of them, or if a test step succeeded without writing its results file. A separate **Frontend image** job builds the production frontend image with a placeholder `NEXT_PUBLIC_API_URL` and fails unless that URL appears in the browser bundle. Pages is only updated when the backend unit tests and the frontend tests ran to completion (passing or failing), so a lint, typecheck or build failure before them on `main` keeps the previous report.
