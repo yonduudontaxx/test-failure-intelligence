@@ -311,7 +311,7 @@ Only pull-request runs cancel an in-progress run for the same ref. A queued run 
 | `POSTGRES_DB` | No | Database name (default: `tfi`) |
 | `POSTGRES_USER` | No | Database user (default: `tfi`) |
 | `BACKEND_PORT` | No | Host port for the backend (default: `3001`) |
-| `FRONTEND_PORT` | No | Host port for the frontend (default: `3000`). If you change it, set `CORS_ORIGINS` to the new frontend origin |
+| `FRONTEND_PORT` | No | Host port for the frontend (default: `3000`). `CORS_ORIGINS` follows it by default; set `CORS_ORIGINS` when serving from another host |
 | `NEXT_PUBLIC_API_URL` | No | Backend API URL seen by browsers (default: `http://localhost:3001`). Next.js inlines it at build time, so run `docker compose build frontend` after changing it |
 | `LOG_LEVEL` | No | Backend log level (default: `info`) |
 

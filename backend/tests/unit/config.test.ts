@@ -35,6 +35,17 @@ describe('parseCorsOrigins', () => {
     ]);
   });
 
+  it('rejects entries containing a wildcard', () => {
+    expect(() => parseCorsOrigins('http://*.example.com')).toThrow(/not allowed/);
+  });
+
+  it.each(['localhost:3000', 'file:///x', 'javascript:alert(1)', 'foo:bar'])(
+    'rejects non-http(s) entry %s',
+    (entry) => {
+      expect(() => parseCorsOrigins(entry)).toThrow(/invalid origin/);
+    },
+  );
+
   it('throws on an invalid URL', () => {
     expect(() => parseCorsOrigins('not-a-url')).toThrow(/invalid origin/);
   });

@@ -39,14 +39,19 @@ export function parseCorsOrigins(raw: string | undefined): readonly string[] {
     return [DEFAULT_CORS_ORIGIN];
   }
   return entries.map((entry) => {
-    if (entry === '*') {
+    if (entry.includes('*')) {
       throw new Error('CORS_ORIGINS must list explicit origins; "*" is not allowed');
     }
+    let url: URL;
     try {
-      return new URL(entry).origin;
+      url = new URL(entry);
     } catch {
       throw new Error(`CORS_ORIGINS contains an invalid origin. Got: "${entry}"`);
     }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`CORS_ORIGINS contains an invalid origin. Got: "${entry}"`);
+    }
+    return url.origin;
   });
 }
 
