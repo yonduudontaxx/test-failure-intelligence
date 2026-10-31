@@ -41,7 +41,7 @@
     "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
     "allure-jest": "^3.10.0",
-    "eslint": "^9.39.4",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^9.1.2",
     "jest": "^30.5.2",
     "node-pg-migrate": "^8.0.4",
