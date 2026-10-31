@@ -25,10 +25,16 @@ import failurePatternsRoute from './http/routes/projects/failure-patterns.route.
 export interface BuildAppOptions extends FastifyServerOptions {
   pool: Pool;
   rateLimitMax?: number;
+  corsOrigins?: readonly string[];
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
-  const { pool, rateLimitMax = config.rateLimitMax, ...fastifyOpts } = opts;
+  const {
+    pool,
+    rateLimitMax = config.rateLimitMax,
+    corsOrigins = config.corsOrigins,
+    ...fastifyOpts
+  } = opts;
   const app = Fastify({
     logger: { level: config.logLevel },
     ajv: { customOptions: { removeAdditional: false } },
@@ -38,7 +44,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(repositoriesPlugin, { pool });
   await app.register(rateLimit, { max: rateLimitMax, timeWindow: '1 minute' });
   app.register(sensible);
-  app.register(cors);
+  app.register(cors, { origin: [...corsOrigins] });
   app.register(swaggerPlugin);
   app.register(errorHandlerPlugin);
   app.register(multipart, {

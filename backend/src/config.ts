@@ -12,6 +12,7 @@ interface Config {
   databaseUrl: string;
   logLevel: LogLevel;
   rateLimitMax: number;
+  corsOrigins: readonly string[];
 }
 
 function requireEnum<T extends string>(
@@ -43,10 +44,22 @@ function buildConfig(): Readonly<Config> {
     throw new Error(`RATE_LIMIT_MAX must be a valid positive integer. Got: "${process.env.RATE_LIMIT_MAX}"`);
   }
 
+  const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
   const nodeEnv = requireEnum(process.env.NODE_ENV, VALID_NODE_ENVS, 'NODE_ENV', 'development');
   const logLevel = requireEnum(process.env.LOG_LEVEL, VALID_LOG_LEVELS, 'LOG_LEVEL', 'info');
 
-  return Object.freeze({ port: rawPort, nodeEnv, databaseUrl, logLevel, rateLimitMax });
+  return Object.freeze({
+    port: rawPort,
+    nodeEnv,
+    databaseUrl,
+    logLevel,
+    rateLimitMax,
+    corsOrigins,
+  });
 }
 
 export const config: Readonly<Config> = buildConfig();

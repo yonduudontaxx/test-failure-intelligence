@@ -287,6 +287,7 @@ Only pull-request runs cancel an in-progress run for the same ref. A queued run 
 | `NODE_ENV` | No | `development` | `development`, `production`, or `test` |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
 | `RATE_LIMIT_MAX` | No | `300` | Requests per client address per minute across all routes; over the limit returns `429` (`RATE_LIMITED` on `/api/v1`) |
+| `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated browser origins allowed by CORS. Requests from other origins get no `Access-Control-Allow-Origin` header. Set it to the frontend's public URL when deploying |
 | `TEST_DATABASE_URL` | No | `postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test` | Database migrated by every Jest run's `globalSetup` (unit and integration) and used by the integration tests. Must end in `_test` |
 
 `DATABASE_URL` is required at startup. Copy `backend/.env.example` to `backend/.env` to get started locally.
