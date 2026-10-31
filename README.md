@@ -1,6 +1,7 @@
 # Test Failure Intelligence
 
 [![CI](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/ci.yml)
+[![Security](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/security.yml/badge.svg)](https://github.com/yonduudontaxx/test-failure-intelligence/actions/workflows/security.yml)
 
 A self-hosted quality engineering platform that gives engineering teams visibility into test suite health. It ingests test results from Jest, Vitest, Playwright, and JUnit XML, then surfaces flaky tests, failure trends, environment stability, and execution history — so teams act on test reliability rather than tolerate it.
 
@@ -231,6 +232,8 @@ Set these under **Settings → Variables → Actions** in your repository.
 Before the backend tests, CI loads the built `config` module and fails unless it resolves `NODE_ENV` to `test` (a sanity check that the job's own `NODE_ENV` reaches the built config), and fails unless `TEST_DATABASE_URL` points at `tfi_test`. After the tests, it fails if the unit or integration suite has zero tests or passed none of them, or if a test step succeeded without writing its results file. A separate **Frontend image** job builds the production frontend image with a placeholder `NEXT_PUBLIC_API_URL` and fails unless that URL appears in the browser bundle. Pages is only updated when the backend unit tests and the frontend tests ran to completion (passing or failing), so a lint, typecheck or build failure before them on `main` keeps the previous report.
 
 Only pull-request runs cancel an in-progress run for the same ref. A queued run is still replaced when a newer run for the same ref is queued, so a scheduled run can be superseded by a push. GitHub may delay scheduled runs, and disables them on public repositories after 60 days without repository activity.
+
+`.github/workflows/security.yml` runs CodeQL, Semgrep, a gitleaks scan of the full history and `npm audit --audit-level=high` for `backend/` and `frontend/` on pushes to `main`, on pull requests to `main` or `develop`, and weekly. See [SECURITY.md](SECURITY.md) for what each job checks and how to report a vulnerability.
 
 ### Self-dogfooding
 

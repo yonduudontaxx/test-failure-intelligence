@@ -70,9 +70,9 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
 
@@ -90,20 +90,29 @@ jobs:
       # to the GitHub Actions job summary.
       - name: Ingest test results
         if: always()
+        env:
+          TFI_API_URL: ${{ vars.TFI_API_URL }}
+          TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+          TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+          BRANCH: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          PIPELINE_NAME: ${{ github.workflow }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          EXTERNAL_ID: ${{ github.run_id }}
         run: |
           response=$(curl --fail-with-body -sS -X POST \
-            "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+            "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
             -F "file=@jest-results.json" \
             -F "format=jest" \
-            -F "branch=${{ github.ref_name }}" \
-            -F "commitSha=${{ github.sha }}" \
+            -F "branch=${BRANCH}" \
+            -F "commitSha=${COMMIT_SHA}" \
             -F "environment=ci" \
-            -F "pipelineName=${{ github.workflow }}" \
-            -F "buildNumber=${{ github.run_number }}" \
-            -F "externalId=${{ github.run_id }}")
-          run_id=$(echo "$response" | jq -r '.data.runId')
-          echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-          url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+            -F "pipelineName=${PIPELINE_NAME}" \
+            -F "buildNumber=${BUILD_NUMBER}" \
+            -F "externalId=${EXTERNAL_ID}")
+          run_id=$(echo "$response" | jq -er '.data.runId')
+          echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+          url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
           {
             echo "### Test Failure Intelligence"
             echo ""
@@ -115,7 +124,7 @@ jobs:
       # TFI_RUN_ID to $GITHUB_ENV so this step can read it.
       - name: Comment dashboard link on PR
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v5
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
           TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
@@ -148,20 +157,29 @@ jobs:
 #
 #   - name: Ingest test results
 #     if: always()
+#     env:
+#       TFI_API_URL: ${{ vars.TFI_API_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       BRANCH: ${{ github.ref_name }}
+#       COMMIT_SHA: ${{ github.sha }}
+#       PIPELINE_NAME: ${{ github.workflow }}
+#       BUILD_NUMBER: ${{ github.run_number }}
+#       EXTERNAL_ID: ${{ github.run_id }}
 #     run: |
 #       response=$(curl --fail-with-body -sS -X POST \
-#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
 #         -F "file=@playwright-results.json" \
 #         -F "format=playwright" \
-#         -F "branch=${{ github.ref_name }}" \
-#         -F "commitSha=${{ github.sha }}" \
+#         -F "branch=${BRANCH}" \
+#         -F "commitSha=${COMMIT_SHA}" \
 #         -F "environment=ci" \
-#         -F "pipelineName=${{ github.workflow }}" \
-#         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}")
-#       run_id=$(echo "$response" | jq -r '.data.runId')
-#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#         -F "pipelineName=${PIPELINE_NAME}" \
+#         -F "buildNumber=${BUILD_NUMBER}" \
+#         -F "externalId=${EXTERNAL_ID}")
+#       run_id=$(echo "$response" | jq -er '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+#       url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
@@ -170,7 +188,7 @@ jobs:
 #
 #   - name: Comment dashboard link on PR
 #     if: always() && github.event_name == 'pull_request'
-#     uses: actions/github-script@v5
+#     uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
 #     env:
 #       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
 #       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
@@ -200,20 +218,29 @@ jobs:
 #
 #   - name: Ingest test results
 #     if: always()
+#     env:
+#       TFI_API_URL: ${{ vars.TFI_API_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       BRANCH: ${{ github.ref_name }}
+#       COMMIT_SHA: ${{ github.sha }}
+#       PIPELINE_NAME: ${{ github.workflow }}
+#       BUILD_NUMBER: ${{ github.run_number }}
+#       EXTERNAL_ID: ${{ github.run_id }}
 #     run: |
 #       response=$(curl --fail-with-body -sS -X POST \
-#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
 #         -F "file=@junit.xml" \
 #         -F "format=junit-xml" \
-#         -F "branch=${{ github.ref_name }}" \
-#         -F "commitSha=${{ github.sha }}" \
+#         -F "branch=${BRANCH}" \
+#         -F "commitSha=${COMMIT_SHA}" \
 #         -F "environment=ci" \
-#         -F "pipelineName=${{ github.workflow }}" \
-#         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}")
-#       run_id=$(echo "$response" | jq -r '.data.runId')
-#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#         -F "pipelineName=${PIPELINE_NAME}" \
+#         -F "buildNumber=${BUILD_NUMBER}" \
+#         -F "externalId=${EXTERNAL_ID}")
+#       run_id=$(echo "$response" | jq -er '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+#       url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
@@ -222,7 +249,7 @@ jobs:
 #
 #   - name: Comment dashboard link on PR
 #     if: always() && github.event_name == 'pull_request'
-#     uses: actions/github-script@v5
+#     uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
 #     env:
 #       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
 #       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
@@ -268,14 +295,18 @@ jobs:
 #
 #   - name: Ingest test results (canonical JSON body)
 #     if: always()
+#     env:
+#       TFI_API_URL: ${{ vars.TFI_API_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
 #     run: |
 #       response=$(curl --fail-with-body -sS -X POST \
-#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
 #         -H "Content-Type: application/json" \
 #         --data-binary @canonical-results.json)
-#       run_id=$(echo "$response" | jq -r '.data.runId')
-#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#       run_id=$(echo "$response" | jq -er '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+#       url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
@@ -284,7 +315,7 @@ jobs:
 #
 #   - name: Comment dashboard link on PR
 #     if: always() && github.event_name == 'pull_request'
-#     uses: actions/github-script@v5
+#     uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
 #     env:
 #       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
 #       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
@@ -308,20 +339,29 @@ jobs:
 #
 #   - name: Ingest test results
 #     if: always()
+#     env:
+#       TFI_API_URL: ${{ vars.TFI_API_URL }}
+#       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}
+#       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
+#       BRANCH: ${{ github.ref_name }}
+#       COMMIT_SHA: ${{ github.sha }}
+#       PIPELINE_NAME: ${{ github.workflow }}
+#       BUILD_NUMBER: ${{ github.run_number }}
+#       EXTERNAL_ID: ${{ github.run_id }}
 #     run: |
 #       response=$(curl --fail-with-body -sS -X POST \
-#         "${{ vars.TFI_API_URL }}/api/v1/projects/${{ vars.TFI_PROJECT_ID }}/ingest" \
+#         "${TFI_API_URL}/api/v1/projects/${TFI_PROJECT_ID}/ingest" \
 #         -F "file=@results.json" \
 #         -F "format=json" \
-#         -F "branch=${{ github.ref_name }}" \
-#         -F "commitSha=${{ github.sha }}" \
+#         -F "branch=${BRANCH}" \
+#         -F "commitSha=${COMMIT_SHA}" \
 #         -F "environment=ci" \
-#         -F "pipelineName=${{ github.workflow }}" \
-#         -F "buildNumber=${{ github.run_number }}" \
-#         -F "externalId=${{ github.run_id }}")
-#       run_id=$(echo "$response" | jq -r '.data.runId')
-#       echo "TFI_RUN_ID=${run_id}" >> $GITHUB_ENV
-#       url="${{ vars.TFI_DASHBOARD_URL }}/projects/${{ vars.TFI_PROJECT_ID }}/runs/${run_id}"
+#         -F "pipelineName=${PIPELINE_NAME}" \
+#         -F "buildNumber=${BUILD_NUMBER}" \
+#         -F "externalId=${EXTERNAL_ID}")
+#       run_id=$(echo "$response" | jq -er '.data.runId')
+#       echo "TFI_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+#       url="${TFI_DASHBOARD_URL}/projects/${TFI_PROJECT_ID}/runs/${run_id}"
 #       {
 #         echo "### Test Failure Intelligence"
 #         echo ""
@@ -330,7 +370,7 @@ jobs:
 #
 #   - name: Comment dashboard link on PR
 #     if: always() && github.event_name == 'pull_request'
-#     uses: actions/github-script@v5
+#     uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
 #     env:
 #       TFI_DASHBOARD_URL: ${{ vars.TFI_DASHBOARD_URL }}
 #       TFI_PROJECT_ID: ${{ vars.TFI_PROJECT_ID }}

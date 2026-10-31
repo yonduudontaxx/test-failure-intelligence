@@ -43,9 +43,9 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -140,7 +140,7 @@ jobs:
 
       - name: Upload Allure report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: allure-report-backend
           path: backend/allure-report
@@ -155,9 +155,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "22"
           cache: "npm"
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload Allure report
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: allure-report-frontend
           path: frontend/allure-report
@@ -208,7 +208,7 @@ jobs:
     name: Frontend image
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Build production image with a sentinel API URL
         run: docker build -f docker/frontend.Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://api.ci-sentinel.invalid -t tfi-frontend:ci frontend
@@ -227,19 +227,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: allure-report-backend
           path: site/backend
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: allure-report-frontend
           path: site/frontend
 
       - name: Create index page
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
-          cat > site/index.html << 'EOF'
+          cat > site/index.html << EOF
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -257,7 +259,7 @@ jobs:
           </head>
           <body>
             <h1>Test Failure Intelligence — Allure Reports</h1>
-            <p>Generated from the latest CI run on <strong>${{ github.ref_name }}</strong>.</p>
+            <p>Generated from the latest CI run on <strong>${BRANCH}</strong>.</p>
             <a href="backend/">Backend (Jest)
               <span>Unit and integration test results for the Fastify API</span>
             </a>
@@ -269,15 +271,16 @@ jobs:
           EOF
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: site
           keep_files: false
 
       - name: Post report URL to summary
+        env:
+          PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
         run: |
-          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
           {
             echo "### Allure Test Reports"
             echo ""
