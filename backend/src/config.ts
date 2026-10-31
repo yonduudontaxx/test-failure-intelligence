@@ -12,6 +12,7 @@ interface Config {
   databaseUrl: string;
   logLevel: LogLevel;
   rateLimitMax: number;
+  corsOrigins: readonly string[];
 }
 
 function requireEnum<T extends string>(
@@ -25,6 +26,33 @@ function requireEnum<T extends string>(
     throw new Error(`${name} must be one of: ${allowed.join(', ')}. Got: "${rawValue}"`);
   }
   return value as T;
+}
+
+const DEFAULT_CORS_ORIGIN = 'http://localhost:3000';
+
+export function parseCorsOrigins(raw: string | undefined): readonly string[] {
+  const entries = (raw ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (entries.length === 0) {
+    return [DEFAULT_CORS_ORIGIN];
+  }
+  return entries.map((entry) => {
+    if (entry.includes('*')) {
+      throw new Error('CORS_ORIGINS must list explicit origins; "*" is not allowed');
+    }
+    let url: URL;
+    try {
+      url = new URL(entry);
+    } catch {
+      throw new Error(`CORS_ORIGINS contains an invalid origin. Got: "${entry}"`);
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`CORS_ORIGINS contains an invalid origin. Got: "${entry}"`);
+    }
+    return url.origin;
+  });
 }
 
 function buildConfig(): Readonly<Config> {
@@ -43,10 +71,19 @@ function buildConfig(): Readonly<Config> {
     throw new Error(`RATE_LIMIT_MAX must be a valid positive integer. Got: "${process.env.RATE_LIMIT_MAX}"`);
   }
 
+  const corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS);
+
   const nodeEnv = requireEnum(process.env.NODE_ENV, VALID_NODE_ENVS, 'NODE_ENV', 'development');
   const logLevel = requireEnum(process.env.LOG_LEVEL, VALID_LOG_LEVELS, 'LOG_LEVEL', 'info');
 
-  return Object.freeze({ port: rawPort, nodeEnv, databaseUrl, logLevel, rateLimitMax });
+  return Object.freeze({
+    port: rawPort,
+    nodeEnv,
+    databaseUrl,
+    logLevel,
+    rateLimitMax,
+    corsOrigins,
+  });
 }
 
 export const config: Readonly<Config> = buildConfig();
