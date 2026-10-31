@@ -11,6 +11,7 @@ interface Config {
   nodeEnv: NodeEnv;
   databaseUrl: string;
   logLevel: LogLevel;
+  rateLimitMax: number;
 }
 
 function requireEnum<T extends string>(
@@ -37,10 +38,15 @@ function buildConfig(): Readonly<Config> {
     throw new Error('DATABASE_URL environment variable is required');
   }
 
+  const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX ?? '300', 10);
+  if (Number.isNaN(rateLimitMax) || rateLimitMax <= 0) {
+    throw new Error(`RATE_LIMIT_MAX must be a valid positive integer. Got: "${process.env.RATE_LIMIT_MAX}"`);
+  }
+
   const nodeEnv = requireEnum(process.env.NODE_ENV, VALID_NODE_ENVS, 'NODE_ENV', 'development');
   const logLevel = requireEnum(process.env.LOG_LEVEL, VALID_LOG_LEVELS, 'LOG_LEVEL', 'info');
 
-  return Object.freeze({ port: rawPort, nodeEnv, databaseUrl, logLevel });
+  return Object.freeze({ port: rawPort, nodeEnv, databaseUrl, logLevel, rateLimitMax });
 }
 
 export const config: Readonly<Config> = buildConfig();

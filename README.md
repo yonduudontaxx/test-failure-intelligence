@@ -286,6 +286,7 @@ Only pull-request runs cancel an in-progress run for the same ref. A queued run 
 | `PORT` | No | `3001` | HTTP port |
 | `NODE_ENV` | No | `development` | `development`, `production`, or `test` |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
+| `RATE_LIMIT_MAX` | No | `300` | Requests per client address per minute across all routes; over the limit returns `429` (`RATE_LIMITED` on `/api/v1`) |
 | `TEST_DATABASE_URL` | No | `postgresql://tfi:tfi_dev_password@localhost:5432/tfi_test` | Database migrated by every Jest run's `globalSetup` (unit and integration) and used by the integration tests. Must end in `_test` |
 
 `DATABASE_URL` is required at startup. Copy `backend/.env.example` to `backend/.env` to get started locally.

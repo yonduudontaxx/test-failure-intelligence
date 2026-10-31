@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import sensible from '@fastify/sensible';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import type { Pool } from 'pg';
 import { config } from './config.js';
 import swaggerPlugin from './http/plugins/swagger.js';
@@ -23,10 +24,11 @@ import failurePatternsRoute from './http/routes/projects/failure-patterns.route.
 
 export interface BuildAppOptions extends FastifyServerOptions {
   pool: Pool;
+  rateLimitMax?: number;
 }
 
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
-  const { pool, ...fastifyOpts } = opts;
+  const { pool, rateLimitMax = config.rateLimitMax, ...fastifyOpts } = opts;
   const app = Fastify({
     logger: { level: config.logLevel },
     ajv: { customOptions: { removeAdditional: false } },
@@ -34,6 +36,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   });
 
   await app.register(repositoriesPlugin, { pool });
+  await app.register(rateLimit, { max: rateLimitMax, timeWindow: '1 minute' });
   app.register(sensible);
   app.register(cors);
   app.register(swaggerPlugin);
