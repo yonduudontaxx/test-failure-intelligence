@@ -28,6 +28,28 @@ function requireEnum<T extends string>(
   return value as T;
 }
 
+const DEFAULT_CORS_ORIGIN = 'http://localhost:3000';
+
+export function parseCorsOrigins(raw: string | undefined): readonly string[] {
+  const entries = (raw ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (entries.length === 0) {
+    return [DEFAULT_CORS_ORIGIN];
+  }
+  return entries.map((entry) => {
+    if (entry === '*') {
+      throw new Error('CORS_ORIGINS must list explicit origins; "*" is not allowed');
+    }
+    try {
+      return new URL(entry).origin;
+    } catch {
+      throw new Error(`CORS_ORIGINS contains an invalid origin. Got: "${entry}"`);
+    }
+  });
+}
+
 function buildConfig(): Readonly<Config> {
   const rawPort = parseInt(process.env.PORT ?? '3001', 10);
   if (Number.isNaN(rawPort) || rawPort <= 0) {
@@ -44,10 +66,7 @@ function buildConfig(): Readonly<Config> {
     throw new Error(`RATE_LIMIT_MAX must be a valid positive integer. Got: "${process.env.RATE_LIMIT_MAX}"`);
   }
 
-  const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
+  const corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS);
 
   const nodeEnv = requireEnum(process.env.NODE_ENV, VALID_NODE_ENVS, 'NODE_ENV', 'development');
   const logLevel = requireEnum(process.env.LOG_LEVEL, VALID_LOG_LEVELS, 'LOG_LEVEL', 'info');
