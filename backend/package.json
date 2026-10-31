@@ -23,32 +23,33 @@
     "node": ">=22.0.0"
   },
   "dependencies": {
-    "@fastify/cors": "^11.2.0",
+    "@fastify/cors": "^11.3.1",
     "@fastify/multipart": "^9.0.0",
-    "@fastify/sensible": "^6.0.4",
-    "@fastify/swagger": "^9.7.0",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/sensible": "^6.0.7",
+    "@fastify/swagger": "^9.9.2",
     "@fastify/swagger-ui": "^6.1.1",
     "dotenv": "^17.4.2",
     "fast-xml-parser": "^5.11.2",
     "fastify": "^5.12.7",
     "fastify-plugin": "^5.1.0",
     "http-errors": "^2.0.1",
-    "pg": "^8.21.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/http-errors": "^2.0.5",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.9.1",
-    "@types/pg": "^8.20.0",
-    "allure-jest": "^3.10.0",
+    "@types/node": "^25.9.9",
+    "@types/pg": "^8.23.1",
+    "allure-jest": "^3.14.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^9.1.2",
     "jest": "^30.5.2",
     "node-pg-migrate": "^8.0.4",
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.10",
     "ts-jest": "^29.4.14",
     "ts-node": "^10.9.2",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.0"
   }

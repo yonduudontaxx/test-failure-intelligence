@@ -17,6 +17,11 @@ export default fp(
         return;
       }
 
+      if (err.statusCode === 429) {
+        reply.code(429).send(failure('RATE_LIMITED', err.message));
+        return;
+      }
+
       if (err.validation) {
         reply.code(400).send(failure('VALIDATION_ERROR', err.message));
         return;
